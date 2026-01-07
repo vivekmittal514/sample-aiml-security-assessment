@@ -12,7 +12,14 @@ phases:
       - echo "Multi-account scan is $MULTI_ACCOUNT_SCAN"
       - cd resco-aiml-assessment
       - ls -la
-      - sam build --use-container --template template-multi-account.yaml
+      - |
+        if [[ $MULTI_ACCOUNT_SCAN = 'true' ]]; then
+          echo "Building multi-account template"
+          sam build --use-container --template template-multi-account.yaml
+        else
+          echo "Building single-account template"
+          sam build --use-container --template template.yaml
+        fi
       - echo "Build completed, checking build directory:"
       - ls -la .aws-sam/build/
       - |
@@ -53,7 +60,7 @@ phases:
           fi
         else
           echo "Single account deployment"
-          sam deploy --template-file .aws-sam/build/template.yaml --stack-name resco-aiml-security --capabilities CAPABILITY_IAM --no-confirm-changeset --s3-bucket $BUCKET_REPORT --parameter-overrides BucketName=$BUCKET_REPORT
+          sam deploy --template-file .aws-sam/build/template.yaml --stack-name resco-aiml-security --capabilities CAPABILITY_IAM --no-confirm-changeset --resolve-s3
           STATE_MACHINE_ARN=$(aws cloudformation describe-stacks --stack-name resco-aiml-security --query 'Stacks[0].Outputs[?OutputKey==`AIMLAssessmentStateMachineArn`].OutputValue' --output text)
           aws stepfunctions start-execution --state-machine-arn $STATE_MACHINE_ARN --input "{\"accountId\":\"$AWS_ACCOUNT_ID\"}"
         fi

@@ -219,9 +219,6 @@ Resources:
             Principal:
               Service:
                 - codebuild.amazonaws.com
-            Condition:
-              StringEquals:
-                aws:SourceArn: !Sub 'arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/ReSCOCodeBuild'
       Policies:
         - PolicyName: LogGroup
           PolicyDocument:
