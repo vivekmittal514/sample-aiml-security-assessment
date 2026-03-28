@@ -403,16 +403,8 @@ def generate_html_report(assessment_results):
         """
 
 
-
-    # Replace {rows} placeholder with generated rows
-    html_content = html_template.format(rows='\n'.join(rows))
-    
-    return html_content
-
-
-
 def get_current_utc_date():
-    return datetime.utcnow().strftime("%Y/%m/%d")
+    return datetime.now(timezone.utc).strftime("%Y/%m/%d")
 
 def write_html_to_s3(html_content: str, s3_bucket: str, execution_id: str, account_id: str = None) -> Optional[str]:
     """
@@ -430,7 +422,7 @@ def write_html_to_s3(html_content: str, s3_bucket: str, execution_id: str, accou
         s3_client = boto3.client('s3', config=boto3_config)
         
         # Generate the S3 key for local bucket (no account folder needed)
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         s3_key = f'security_assessment_{timestamp}_{execution_id}.html'
         
         # Upload the HTML file
@@ -468,7 +460,7 @@ def consolidate_multi_account_reports(central_bucket: str):
 <p>Individual account reports have been generated. Manual consolidation required.</p></body></html>'''
         
         s3_client = boto3.client('s3')
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         s3_key = f'consolidated_report_{timestamp}.html'
         
         s3_client.put_object(
