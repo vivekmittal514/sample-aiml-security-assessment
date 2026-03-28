@@ -1,32 +1,37 @@
 # ReSCO AI/ML Security Assessments
 
 ## Overview
-This project contains a collection of tools and frameworks for performing security assessments for your AI/ML workload on your single AWS account or multiple AWS accounts. It uses AWS serverless services to gather the data from the control plane and provide a list of assessments with the sevrity level and recommended actions.
+
+This project contains a collection of tools and frameworks for performing security assessments for your AI/ML workload on your single AWS account or multiple AWS accounts. It uses AWS serverless services to gather the data from the control plane and provide a list of assessments with the severity level and recommended actions.
 
 ReSCO assessments help organizations evaluate and improve their:
+
 - **Resilience**: System reliability, fault tolerance, and disaster recovery capabilities
 - **Security**: Security posture, compliance, and risk management
 - **Cost Optimization**: Resource utilization, cost efficiency, and optimization opportunities
 
 This repo focus on performing security assessment for your workloads using [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Amazon Bedrock AgentCore](https://aws.github.io/bedrock-agentcore-starter-toolkit/), or [Amazon Sagemaker AI](https://aws.amazon.com/sagemaker/ai/).
 
-## Assessment Modules 
+## Assessment Modules
 
-| Module | Description | Lambda Functions | Status |
-|--------|-------------|------------------|--------|
+| Module                                           | Description                | Lambda Functions                                   | Status    |
+| ------------------------------------------------ | -------------------------- | -------------------------------------------------- | --------- |
 | [resco-aiml-assessment](./resco-aiml-assessment) | AI/ML workload assessments | Bedrock Lambda, SageMaker Lambda, AgentCore Lambda | ✅ Active |
 
 ## Prerequisites
+
 - Python 3.12+ - [Install Python](https://www.python.org/downloads/)
 - SAM CLI - [Install the SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)
 - Docker - [Install Docker community edition](https://hub.docker.com/search/?type=edition&offering=community)
 
 ## Architecture
+
 ![Architecture](./generated-diagrams/ArchitectureDiagram.png)
 
 ## Single-Account Deployment
+
 1. Download [aiml-security-assessment-single-account.yaml](deployment/aiml-security-assessment-single-account.yaml) CloudFormation template.
-2. 🚀 **[Deploy to AWS CloudFormation](https://console.aws.amazon.com/cloudformation/home#/stacks/create/template?stackName=resco-aiml-single-account)** 
+2. 🚀 **[Deploy to AWS CloudFormation](https://console.aws.amazon.com/cloudformation/home#/stacks/create/template?stackName=resco-aiml-single-account)**
 3. Upload CloudFormation template from step 1.
 4. Provide a stack name and optionally specify your email address to receive notifications.
 5. Leave all other parameters as default.
@@ -36,29 +41,29 @@ This repo focus on performing security assessment for your workloads using [Amaz
 9. Once complete, CodeBuild will automatically deploy the assessment stack and run the assessment.
 10. To view results:
     - Navigate to CloudFormation console
-    - Open the `resco-aiml-security` stack (created by SAM)
+    - Open the `aiml-sec-{account_id}` stack (created by SAM, e.g., `aiml-sec-123456789012`)
     - Go to the **Outputs** tab
     - Copy the `AssessmentBucketName` value
-    - Navigate to that S3 bucket and open the `security_assessment_*.html` file 
+    - Navigate to that S3 bucket and open the `security_assessment_*.html` file
 
 ## Multi-Account Deployment
 
 ### Prerequisite
+
 - AWS Organizations setup with management account access or delegated administrator member account.
 
 ### The deployment follows a two-step approach:
-
 
 ### Step 1: Deploy Member Roles (StackSets)
 
 Deploy [1-resco-member-roles.yaml](deployment/1-resco-member-roles.yaml) to all target accounts using CloudFormation StackSets.
 
 #### AWS Console Deployment
+
 1. Navigate to **CloudFormation** > **StackSets**
 2. Create StackSet with [1-resco-member-roles.yaml](deployment/1-resco-member-roles.yaml)
 3. Set `ReSCOAccountID` parameter to your management account ID
 4. Deploy to target organizational units or accounts
-
 
 ### Step 2: Deploy Central Infrastructure
 
@@ -66,26 +71,24 @@ Deploy [2-resco-assessment-codebuild.yaml](deployment/2-resco-assessment-codebui
 
 #### AWS Console Deployment
 
-1. Navigate to [AWS CloudFormation](https://console.aws.amazon.com/cloudformation/home#/stacks/create/template?stackName=resco-aiml-multi-account)**
+1. Navigate to [AWS CloudFormation](https://console.aws.amazon.com/cloudformation/home#/stacks/create/template?stackName=resco-aiml-multi-account)
 2. Select **Upload a template file** and upload [2-resco-assessment-codebuild.yaml](deployment/2-resco-assessment-codebuild.yaml) file.
 3. Select `MultiAccountScan` parameter as true
-3. Provide your email address in `EmailAddress` parameter.
-3. Leave rest of the parameters as default.
-3. Click **Next** and configure the parameters
-4. Stack creation automatically triggers CodeBuild
-
-
-## Execution Assessment (Automatic)
-
+4. Provide your email address in `EmailAddress` parameter.
+5. Leave rest of the parameters as default.
+6. Click **Next** and configure the parameters
+7. Stack creation automatically triggers CodeBuild
 
 ## How It Works
 
 ### Single Account Mode (`MultiAccountScan=false`)
-- Creates local `ReSCOAIMLMemberRole` 
+
+- Creates local `ReSCOAIMLMemberRole`
 - Runs assessment in the same account
 - Uses local S3 bucket for results
 
 ### Multi-Account Mode (`MultiAccountScan=true`)
+
 - Lists all active accounts in AWS Organizations
 - Assumes `ReSCOAIMLMemberRole` in each target account
 - Deploys selected assessment modules in each account with shared S3 bucket
@@ -95,26 +98,30 @@ Deploy [2-resco-assessment-codebuild.yaml](deployment/2-resco-assessment-codebui
 ### Assessment Execution Process
 
 #### Automatic Trigger
+
 - CodeBuild project starts automatically after central stack creation
 - Lambda trigger function initiates the assessment workflow
 
 #### Multi-Account Orchestration
+
 1. **Account Discovery**: CodeBuild queries AWS Organizations for active accounts
 2. **Role Assumption**: Assumes `ReSCOAIMLMemberRole` in each target account
-3. **Module Deployment**: Conditionally deploys selected assessment modules:
-   - AI/ML Assessment (Bedrock Lambda, SageMaker Lambda, AgentCore Lambda)
-   - Security Assessment (EC2 Lambda, RDS Lambda, Lambda Lambda, VPC Lambda)
-   - Resilience Assessment (Backup Lambda, HA Lambda, DR Lambda, FT Lambda)
-   - Cost Assessment (Utilization Lambda, Optimization Lambda, Rightsizing Lambda, Waste Lambda)
-4. **Assessment Execution**: Step Functions orchestrate parallel Lambda execution per module
+3. **Module Deployment**: Deploys the AI/ML assessment module:
+   - Bedrock Assessment Lambda
+   - SageMaker Assessment Lambda
+   - AgentCore Assessment Lambda
+   - IAM Permission Caching Lambda
+   - Consolidated Report Generation Lambda
+4. **Assessment Execution**: Step Functions orchestrate parallel Lambda execution
 5. **Results Collection**: Individual Lambda functions store results in local S3 buckets
 6. **Consolidation**: CodeBuild collects and consolidates results from all accounts
-7. **Reporting**: Generates multi-account, multi-module HTML and CSV reports
+7. **Reporting**: Generates multi-account HTML and CSV reports
 8. **Notification**: Sends completion notification via SNS (if configured)
 
 ## Permissions Required
 
 ### Central Account Role (`ReSCOCodeBuildRole`)
+
 - Assume roles in member accounts
 - List AWS Organizations accounts
 - Deploy CloudFormation/SAM applications
@@ -122,6 +129,7 @@ Deploy [2-resco-assessment-codebuild.yaml](deployment/2-resco-assessment-codebui
 - Write to S3 bucket
 
 ### Member Account Role (`ReSCOAIMLMemberRole`)
+
 - Read-only access to AIML services (Bedrock, SageMaker, AgentCore)
 - IAM read permissions for security assessment
 - CloudTrail, GuardDuty, Lambda read permissions
@@ -135,17 +143,15 @@ Deploy [2-resco-assessment-codebuild.yaml](deployment/2-resco-assessment-codebui
 - **SNS Notifications**: Email alerts on completion/failure
 - **EventBridge Rules**: Automated workflow triggers
 
-
-
 ## Viewing Assessment Results
 
-You can check CodeBuild service to ensure that the assessmnt run has completed successfullybefore accessing the assesment results.
+You can check CodeBuild service to ensure that the assessment run has completed successfully before accessing the assessment results.
 
 ### Accessing Results
 
 1. **Find the S3 Bucket Name**:
    - Navigate to **CloudFormation** > **Stacks** in the AWS Console
-   - For single account, select the `resco-aiml-security` stack
+   - For single account, select the `aiml-sec-{account_id}` stack (e.g., `aiml-sec-123456789012`)
    - For multi account, select the `resco-aiml-multi-account` stack created in [Step 2: Deploy Central Infrastructure](#step-2-deploy-central-infrastructure)
    - Go to the **Outputs** tab
    - Copy the S3 bucket name from the `AssessmentBucketName` output
@@ -159,39 +165,34 @@ You can check CodeBuild service to ensure that the assessmnt run has completed s
 ### Report Structure
 
 #### Consolidated Reports
-- **Location**: `consolidated-reports/` folder
+
+- **Location**: Bucket root
 - **Content**: Multi-account HTML report combining all account assessments
-- **File Format**: `multi_account_report_YYYYMMDD_HHMMSS.html`
+- **File Format**: `consolidated_report_YYYYMMDD_HHMMSS.html`
 
 #### Individual Account Reports
+
 - **Location**: Folders named with account IDs (e.g., `123456789012/`)
-- **Content**: Account-specific CSV and HTML files organized by assessment type
+- **Content**: Account-specific CSV and HTML files for AI/ML assessments
 - **Files Include**:
-  - `aiml/` - AI/ML assessment results
-    - `bedrock_assessment_*.csv` - Bedrock Lambda results
-    - `sagemaker_assessment_*.csv` - SageMaker Lambda results
-    - `agentcore_assessment_*.csv` - AgentCore Lambda results
-  - `security/` - Security assessment results
-    - `ec2_security_*.csv` - EC2 Lambda results
-    - `rds_security_*.csv` - RDS Lambda results
-    - `lambda_security_*.csv` - Lambda Lambda results
-    - `vpc_security_*.csv` - VPC Lambda results
-  - `resilience/` - Resilience assessment results (per service Lambda)
-  - `cost/` - Cost optimization assessment results (per service Lambda)
-  - `consolidated_report_*.html` - Multi-module account report
+  - `bedrock_security_report_{execution_id}.csv` - Bedrock security assessment results
+  - `sagemaker_security_report_{execution_id}.csv` - SageMaker security assessment results
+  - `agentcore_security_report_{execution_id}.csv` - AgentCore security assessment results
+  - `permissions_cache_{execution_id}.json` - IAM permissions cache
+  - `security_assessment_{timestamp}_{execution_id}.html` - Consolidated HTML report
 
 ### Sample Assessment Report
 
 The consolidated report provides a comprehensive view of security findings across all accounts:
 
-| Account ID | Finding | Finding Details | Resolution | Reference | Severity | Status |
-|------------|---------|-----------------|------------|-----------|----------|--------|
-| 3183XXXX3611 | Bedrock Model Invocation Logging Check | Model invocation logging is not enabled | Enable logging to S3 or CloudWatch for audit tracking | [Model Invocation Logging](https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html) | Medium | Failed |
-| 3183XXXX3611 | Bedrock Guardrails Check | No Guardrails configured | Configure content filters and safety measures | [Bedrock Guardrails](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails.html) | Medium | Failed |
-| 3183XXXX3611 | Bedrock CloudTrail Logging Check | CloudTrail not configured for Bedrock API calls | Enable CloudTrail logging for audit compliance | [CloudTrail Logging](https://docs.aws.amazon.com/bedrock/latest/userguide/logging-using-cloudtrail.html) | High | Failed |
-| 3183XXXX3611 | AgentCore Runtime VPC Configuration | Runtime not configured with VPC | Configure VPC with private subnets and required VPC endpoints | [AgentCore VPC](https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/security/agentcore-vpc.md) | High | Failed |
-| 3183XXXX3611 | AgentCore Memory Encryption | Memory without customer-managed encryption | Enable encryption with customer-managed KMS keys | [AgentCore Memory](https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/memory/) | Medium | Failed |
-| 3183XXXX3611 | SageMaker Model Registry Issue | No model package groups found | Implement model versioning and lifecycle management | [MLOps Guide](https://docs.aws.amazon.com/sagemaker/latest/dg/mlops.html) | Medium | Failed |
+| Account ID   | Finding                                | Finding Details                                 | Resolution                                                    | Reference                                                                                                      | Severity | Status |
+| ------------ | -------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------- | ------ |
+| 3183XXXX3611 | Bedrock Model Invocation Logging Check | Model invocation logging is not enabled         | Enable logging to S3 or CloudWatch for audit tracking         | [Model Invocation Logging](https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html) | Medium   | Failed |
+| 3183XXXX3611 | Bedrock Guardrails Check               | No Guardrails configured                        | Configure content filters and safety measures                 | [Bedrock Guardrails](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails.html)                     | Medium   | Failed |
+| 3183XXXX3611 | Bedrock CloudTrail Logging Check       | CloudTrail not configured for Bedrock API calls | Enable CloudTrail logging for audit compliance                | [CloudTrail Logging](https://docs.aws.amazon.com/bedrock/latest/userguide/logging-using-cloudtrail.html)       | High     | Failed |
+| 3183XXXX3611 | AgentCore Runtime VPC Configuration    | Runtime not configured with VPC                 | Configure VPC with private subnets and required VPC endpoints | [AgentCore VPC](https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/security/agentcore-vpc.md)  | High     | Failed |
+| 3183XXXX3611 | AgentCore Memory Encryption            | Memory without customer-managed encryption      | Enable encryption with customer-managed KMS keys              | [AgentCore Memory](https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/memory/)                 | Medium   | Failed |
+| 3183XXXX3611 | SageMaker Model Registry Issue         | No model package groups found                   | Implement model versioning and lifecycle management           | [MLOps Guide](https://docs.aws.amazon.com/sagemaker/latest/dg/mlops.html)                                      | Medium   | Failed |
 
 ### Understanding Results
 
@@ -211,6 +212,7 @@ The consolidated report provides a comprehensive view of security findings acros
 ### Adding New Accounts
 
 #### Option A: AWS Console
+
 1. Navigate to **CloudFormation** > **StackSets**
 2. Select `resco-aiml-member-roles` StackSet
 3. Click **Add stacks to StackSet**
@@ -220,20 +222,24 @@ The consolidated report provides a comprehensive view of security findings acros
 5. Review and click **Submit**
 
 ### Modifying Assessment Scope
+
 Edit the member role permissions in `1-resco-member-roles.yaml` to add/remove service permissions.
 
 ### Concurrent Scanning
+
 Adjust `ConcurrentAccountScans` parameter based on your organization size and cost considerations.
 
 ## Troubleshooting
 
 ### Common Issues
+
 1. **StackSet Deployment Failures**: Check service-linked roles and permissions
 2. **Cross-Account Role Assumption**: Verify trust relationships and account IDs
 3. **SAM Deployment Failures**: Check CodeBuild logs for specific errors
 4. **Step Functions Execution**: Monitor state machine executions in each account
 
 ### Debugging
+
 - Check CodeBuild project logs in CloudWatch
 - Verify cross-account role trust policies
 - Ensure S3 bucket permissions allow cross-account writes
@@ -244,6 +250,7 @@ Adjust `ConcurrentAccountScans` parameter based on your organization size and co
 We welcome community contributions! Please see [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for guidelines.
 
 ## Security
+
 - All roles follow least-privilege principle
 - Cross-account trust limited to specific CodeBuild role
 - S3 bucket enforces SSL-only access
