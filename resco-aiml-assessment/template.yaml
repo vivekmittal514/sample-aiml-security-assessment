@@ -3,7 +3,7 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   resco-aiml-assessment
 
-  Sample SAM Template for resco-aiml-assessment
+  SAM Template for resco-aiml-assessment
 
 Resources:
   AIMLAssessmentStateMachine:
@@ -298,7 +298,7 @@ Resources:
               Effect: Allow
               Action:
                 - bedrock-agentcore:*
-              Resource: 
+              Resource:
                 - '*'
                 - 'arn:aws:bedrock-agentcore:*:*:runtime/*'
                 - 'arn:aws:bedrock-agentcore:*:*:memory/*'
@@ -349,6 +349,7 @@ Resources:
   AIMLAssessmentBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       VersioningConfiguration:
         Status: Enabled
@@ -369,7 +370,7 @@ Resources:
             Effect: Deny
             Principal: '*'
             Action: s3:*
-            Resource: 
+            Resource:
               - !Sub '${AIMLAssessmentBucket.Arn}/*'
               - !GetAtt AIMLAssessmentBucket.Arn
             Condition:
