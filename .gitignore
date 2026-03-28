@@ -1,8 +1,12 @@
-# Kiro IDE files
+# IDE files
 .kiro/
+.vscode/
+.claude/
 
 # Git directory
 .git/
 
 # AWS SAM build artifacts
 resco-aiml-assessment/.aws-sam/
+
+
