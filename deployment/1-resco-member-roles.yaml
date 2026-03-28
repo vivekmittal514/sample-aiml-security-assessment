@@ -20,12 +20,12 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              AWS: !Sub 'arn:${AWS::Partition}:iam::${ReSCOAccountID}:root' 
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${ReSCOAccountID}:root'
             Action:
               - 'sts:AssumeRole'
             Condition:
               ArnEquals:
-                aws:PrincipalArn: !Sub arn:${AWS::Partition}:iam::${ReSCOAccountID}:role/service-role/ReSCOCodeBuildRole
+                aws:PrincipalArn: !Sub arn:${AWS::Partition}:iam::${ReSCOAccountID}:role/service-role/ReSCOMultiAccountCodeBuildRole
       Policies:
         - PolicyName: ReSCOAIMLAssessmentPermissions
           PolicyDocument:
@@ -53,12 +53,24 @@ Resources:
                 Action:
                   - bedrock:ListGuardrails
                   - bedrock:GetGuardrail
-                  - bedrock:ListModelInvocations
                   - bedrock:GetModelInvocationLoggingConfiguration
+                Resource: '*'
+              # Bedrock Agent Permissions (Agents for Amazon Bedrock)
+              - Effect: Allow
+                Action:
                   - bedrock:ListPrompts
                   - bedrock:GetPrompt
                   - bedrock:ListAgents
                   - bedrock:GetAgent
+                Resource: '*'
+              # Bedrock AgentCore Permissions
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:ListAgentRuntimes
+                  - bedrock-agentcore:GetAgentRuntime
+                  - bedrock-agentcore:ListMemories
+                  - bedrock-agentcore:GetMemory
+                  - bedrock-agentcore:ListGateways
                 Resource: '*'
               # SageMaker Assessment Permissions
               - Effect: Allow
@@ -103,6 +115,18 @@ Resources:
                 Action:
                   - ec2:DescribeVpcEndpoints
                   - ec2:DescribeVpcs
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeRouteTables
+                Resource: '*'
+              # ECR Permissions
+              - Effect: Allow
+                Action:
+                  - ecr:DescribeRepositories
+                Resource: '*'
+              # CloudWatch Logs Permissions
+              - Effect: Allow
+                Action:
+                  - logs:DescribeLogGroups
                 Resource: '*'
               # KMS Permissions
               - Effect: Allow
@@ -113,23 +137,8 @@ Resources:
               # GuardDuty Permissions
               - Effect: Allow
                 Action:
-                  - guardduty:GetFindings
-                  - guardduty:ListFindings
                   - guardduty:ListDetectors
                   - guardduty:GetDetector
-                  - guardduty:GetFindingsStatistics
-                  - guardduty:ListPublishingDestinations
-                  - guardduty:ListTagsForResource
-                  - guardduty:GetMemberDetectors
-                  - guardduty:DescribeMalwareScans
-                  - guardduty:GetRemainingFreeTrialDays
-                  - guardduty:GetUsageStatistics
-                  - cloudformation:*
-                  - lambda:*
-                  - apigateway:*
-                  - iam:*
-                  - states:*
-                  - s3:*
                 Resource: '*'
               # Allow access to central assessment bucket
               - Effect: Allow
