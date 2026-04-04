@@ -5,15 +5,6 @@ Description: >
 
   Multi-account SAM Template for resco-aiml-assessment
 
-Parameters:
-  BucketName:
-    Type: String
-    Description: S3 bucket name for storing assessment results
-    Default: ''
-
-Conditions:
-  CreateBucket: !Equals [!Ref BucketName, '']
-
 Resources:
   AIMLAssessmentStateMachine:
     Type: AWS::Serverless::StateMachine
@@ -348,7 +339,6 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub ${AWS::StackName}-${AWS::AccountId}
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
