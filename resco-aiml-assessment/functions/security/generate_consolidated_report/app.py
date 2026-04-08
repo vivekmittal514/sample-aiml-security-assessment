@@ -589,12 +589,13 @@ def lambda_handler(event, context):
     """
     logger.info("Generating Consolidated HTML Report")
     logger.info(f"Event: {event}")
-    
+
     try:
         # Get execution ID from event
         execution_id = event["Execution"]["Name"]
-        # Get account ID from event (extracted from execution role ARN)
-        account_id = event.get("accountId", "unknown")
+        # Get account ID using STS GetCallerIdentity
+        sts_client = boto3.client('sts', config=boto3_config)
+        account_id = sts_client.get_caller_identity()['Account']
         # Get S3 bucket name from environment variable
         s3_bucket = os.environ.get('AIML_ASSESSMENT_BUCKET_NAME')
         if not s3_bucket:

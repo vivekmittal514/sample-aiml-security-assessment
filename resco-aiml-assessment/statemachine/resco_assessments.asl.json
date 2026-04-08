@@ -161,8 +161,7 @@
             "Parameters": {
                 "FunctionName": "${GenerateConsolidatedReportFunction}",
                 "Payload": {
-                    "Execution.$": "$$.Execution",
-                    "accountId.$": "$$.Execution.Name"
+                    "Execution.$": "$$.Execution"
                 }
             },
             "Retry": [
