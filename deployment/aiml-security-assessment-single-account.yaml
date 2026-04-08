@@ -19,7 +19,7 @@ Parameters:
   GitHubRepoUrl:
     Type: String
     Description: GitHub repository URL
-    Default: https://github.com/aws-samples/sample-resco-assessments
+    Default: https://github.com/aws-samples/sample-resco-aiml-assessment
     AllowedPattern: ^https:\/\/github\.com\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+(\.git)?$
     ConstraintDescription: Must be a valid GitHub repository URL (e.g., https://github.com/owner/repo or https://github.com/owner/repo.git)
 
@@ -29,44 +29,44 @@ Parameters:
     Default: main
 
   EmailAddress:
-    Description: 'Email address to receive assessment completion notifications (optional)'
+    Description: "Email address to receive assessment completion notifications (optional)"
     Type: String
-    Default: ''
+    Default: ""
     AllowedPattern: ^$|^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
     ConstraintDescription: Must be a valid email address or leave empty
-  
+
   CodeBuildTimeout:
-    Description: 'Timeout for the CodeBuild job in minutes'
+    Description: "Timeout for the CodeBuild job in minutes"
     Type: Number
     MinValue: 5
     MaxValue: 480
     Default: 60
 
 Conditions:
-  CreateEmailNotification: !Not [!Equals [!Ref EmailAddress, '']]
+  CreateEmailNotification: !Not [!Equals [!Ref EmailAddress, ""]]
 
 Resources:
   # Local ReSCO role for single account assessments
   ReSCOMemberRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
-      Path: '/service-role/'
+      Path: "/service-role/"
       RoleName: ReSCOAIMLMemberRole
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root' 
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
             Action:
-              - 'sts:AssumeRole'
+              - "sts:AssumeRole"
             Condition:
               ArnEquals:
                 aws:PrincipalArn: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/service-role/ReSCOCodeBuildRole
       Policies:
         - PolicyName: ReSCOAIMLAssessmentPermissions
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
@@ -127,18 +127,34 @@ Resources:
                   - guardduty:DescribeMalwareScans
                   - guardduty:GetRemainingFreeTrialDays
                   - guardduty:GetUsageStatistics
-                Resource: '*'
+                  # Bedrock AgentCore Permissions
+                  - bedrock-agentcore:ListAgentRuntimes
+                  - bedrock-agentcore:GetAgentRuntime
+                  - bedrock-agentcore:ListMemories
+                  - bedrock-agentcore:GetMemory
+                  - bedrock-agentcore:ListGateways
+                  # ECR Permissions for AgentCore encryption checks
+                  - ecr:DescribeRepositories
+                  - ecr:GetRepositoryPolicy
+                  # CloudWatch Logs Permissions for AgentCore observability checks
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                  # Additional EC2 Permissions for AgentCore VPC checks
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeRouteTables
+                  - ec2:DescribeNatGateways
+                Resource: "*"
 
   # CodeBuild role for running assessments
   ReSCOCodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
-      Path: '/service-role/'
+      Path: "/service-role/"
       RoleName: ReSCOCodeBuildRole
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
-          - Action: 'sts:AssumeRole'
+          - Action: "sts:AssumeRole"
             Effect: Allow
             Principal:
               Service:
@@ -146,17 +162,17 @@ Resources:
       Policies:
         - PolicyName: LogGroup
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Action:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Effect: Allow
-                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*'
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*"
         - PolicyName: AssumeRole
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Action:
                   - sts:AssumeRole
@@ -164,15 +180,15 @@ Resources:
                 Resource: !GetAtt ReSCOMemberRole.Arn
         - PolicyName: CloudFormationPermissions
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Action:
                   - cloudformation:*
                 Effect: Allow
-                Resource: '*'
+                Resource: "*"
         - PolicyName: SAMDeploymentPermissions
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Action:
                   - lambda:*
@@ -181,7 +197,7 @@ Resources:
                   - states:*
                   - s3:*
                 Effect: Allow
-                Resource: '*'
+                Resource: "*"
 
   # CodeBuild project for running assessments
   ReSCOCodeBuild:
@@ -203,7 +219,7 @@ Resources:
             Value: ReSCOAIMLMemberRole
             Type: PLAINTEXT
           - Name: MULTI_ACCOUNT_SCAN
-            Value: 'false'
+            Value: "false"
             Type: PLAINTEXT
           - Name: AWS_PARTITION
             Value: !Sub ${AWS::Partition}
@@ -224,16 +240,16 @@ Resources:
 
   # Lambda function to start CodeBuild
   CodeBuildStartBuildLambdaRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
               Service: lambda.amazonaws.com
             Action:
-              - 'sts:AssumeRole'
+              - "sts:AssumeRole"
       Path: /
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
@@ -243,7 +259,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - 'codebuild:StartBuild'
+                  - "codebuild:StartBuild"
                 Resource: !GetAtt ReSCOCodeBuild.Arn
 
   CodeBuildStartBuildLambda:
@@ -252,7 +268,7 @@ Resources:
       Handler: index.lambda_handler
       Role: !GetAtt CodeBuildStartBuildLambdaRole.Arn
       Timeout: 120
-      Runtime: python3.10
+      Runtime: python3.12
       Code:
         ZipFile: |
           import boto3
@@ -309,7 +325,7 @@ Resources:
     Condition: CreateEmailNotification
     Type: AWS::SNS::Topic
     Properties:
-      Subscription: 
+      Subscription:
         - Endpoint: !Ref EmailAddress
           Protocol: email
 
@@ -319,12 +335,12 @@ Resources:
     Properties:
       PolicyDocument:
         Id: snsNotificationsPolicy
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Sid: Allow events
             Effect: Allow
             Principal:
-              Service: 'events.amazonaws.com'
+              Service: "events.amazonaws.com"
             Action:
               - sns:Publish
             Resource: !Ref ReSCONotificationTopic

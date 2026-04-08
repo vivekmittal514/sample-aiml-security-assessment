@@ -146,7 +146,6 @@ Resources:
               Action:
                 - bedrock:ListGuardrails
                 - bedrock:GetGuardrail
-                - bedrock:ListModelInvocations
                 - bedrock:GetModelInvocationLoggingConfiguration
                 - bedrock:ListPrompts
                 - bedrock:GetPrompt
@@ -303,12 +302,12 @@ Resources:
             - Sid: AgentCorePermissions
               Effect: Allow
               Action:
-                - bedrock-agentcore:*
-              Resource:
-                - '*'
-                - 'arn:aws:bedrock-agentcore:*:*:runtime/*'
-                - 'arn:aws:bedrock-agentcore:*:*:memory/*'
-                - 'arn:aws:bedrock-agentcore:*:*:gateway/*'
+                - bedrock-agentcore:ListAgentRuntimes
+                - bedrock-agentcore:GetAgentRuntime
+                - bedrock-agentcore:ListMemories
+                - bedrock-agentcore:GetMemory
+                - bedrock-agentcore:ListGateways
+              Resource: '*'
             - Sid: EC2Permissions
               Effect: Allow
               Action:

@@ -117,16 +117,19 @@ Resources:
                   - ec2:DescribeVpcs
                   - ec2:DescribeSubnets
                   - ec2:DescribeRouteTables
+                  - ec2:DescribeNatGateways
                 Resource: '*'
               # ECR Permissions
               - Effect: Allow
                 Action:
                   - ecr:DescribeRepositories
+                  - ecr:GetRepositoryPolicy
                 Resource: '*'
               # CloudWatch Logs Permissions
               - Effect: Allow
                 Action:
                   - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
                 Resource: '*'
               # KMS Permissions
               - Effect: Allow
@@ -139,6 +142,15 @@ Resources:
                 Action:
                   - guardduty:ListDetectors
                   - guardduty:GetDetector
+                  - guardduty:GetFindings
+                  - guardduty:ListFindings
+                  - guardduty:GetFindingsStatistics
+                  - guardduty:ListPublishingDestinations
+                  - guardduty:ListTagsForResource
+                  - guardduty:GetMemberDetectors
+                  - guardduty:DescribeMalwareScans
+                  - guardduty:GetRemainingFreeTrialDays
+                  - guardduty:GetUsageStatistics
                 Resource: '*'
               # Allow access to central assessment bucket
               - Effect: Allow
