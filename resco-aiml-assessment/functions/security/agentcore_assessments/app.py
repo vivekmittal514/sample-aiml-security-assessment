@@ -639,7 +639,7 @@ def check_stale_agentcore_access(permission_cache: Dict[str, Any]) -> List[Dict[
                 job_status = 'IN_PROGRESS'
                 
                 while job_status == 'IN_PROGRESS' and elapsed_time < max_wait_time:
-                    time.sleep(wait_interval)
+                    time.sleep(wait_interval)  # nosemgrep: arbitrary-sleep
                     elapsed_time += wait_interval
                     
                     get_response = iam_client.get_service_last_accessed_details(JobId=job_id)

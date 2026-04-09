@@ -303,7 +303,11 @@ Resources:
             - Sid: AgentCorePermissions
               Effect: Allow
               Action:
-                - bedrock-agentcore:*
+                - bedrock-agentcore:ListAgentRuntimes
+                - bedrock-agentcore:GetAgentRuntime
+                - bedrock-agentcore:ListMemories
+                - bedrock-agentcore:GetMemory
+                - bedrock-agentcore:ListGateways
               Resource: '*'
             - Sid: EC2Permissions
               Effect: Allow

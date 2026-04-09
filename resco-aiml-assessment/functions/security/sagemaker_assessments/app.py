@@ -305,7 +305,7 @@ def check_sagemaker_iam_permissions(permission_cache) -> Dict[str, Any]:
                                             'last_accessed': last_accessed
                                         })
                             break
-                        time.sleep(1)
+                        time.sleep(1)  # nosemgrep: arbitrary-sleep
                         waiter_time += 1
                 except Exception as e:
                     logger.error(f"Error checking last access for user {user_name}: {str(e)}")

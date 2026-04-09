@@ -190,14 +190,82 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Action:
-                  - lambda:*
-                  - apigateway:*
-                  - iam:*
-                  - states:*
-                  - s3:*
+              - Sid: LambdaPermissions
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:UpdateFunctionCode
+                  - lambda:UpdateFunctionConfiguration
+                  - lambda:AddPermission
+                  - lambda:RemovePermission
+                  - lambda:TagResource
+                  - lambda:UntagResource
+                  - lambda:ListTags
+                  - lambda:InvokeFunction
+                  - lambda:PublishVersion
+                  - lambda:GetPolicy
                 Effect: Allow
-                Resource: "*"
+                Resource: '*'
+              - Sid: IAMPermissions
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                Effect: Allow
+                Resource: '*'
+              - Sid: IAMPassRole
+                Action:
+                  - iam:PassRole
+                Effect: Allow
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/resco-aiml-*'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aiml-sec-*'
+              - Sid: StepFunctionsPermissions
+                Action:
+                  - states:CreateStateMachine
+                  - states:DeleteStateMachine
+                  - states:DescribeStateMachine
+                  - states:UpdateStateMachine
+                  - states:TagResource
+                  - states:UntagResource
+                  - states:ListStateMachines
+                  - states:StartExecution
+                  - states:DescribeExecution
+                Effect: Allow
+                Resource: '*'
+              - Sid: S3Permissions
+                Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
+                  - s3:PutBucketPolicy
+                  - s3:GetBucketPolicy
+                  - s3:DeleteBucketPolicy
+                  - s3:PutBucketVersioning
+                  - s3:GetBucketVersioning
+                  - s3:PutBucketPublicAccessBlock
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:PutBucketTagging
+                  - s3:GetBucketTagging
+                  - s3:PutEncryptionConfiguration
+                  - s3:GetEncryptionConfiguration
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Effect: Allow
+                Resource: '*'
 
   # CodeBuild project for running assessments
   ReSCOCodeBuild:

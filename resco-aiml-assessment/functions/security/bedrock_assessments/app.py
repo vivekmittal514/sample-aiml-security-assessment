@@ -312,7 +312,7 @@ def check_stale_bedrock_access(permission_cache) -> Dict[str, Any]:
                                         'last_accessed': None
                                     })
                         break
-                    time.sleep(1)
+                    time.sleep(1)  # nosemgrep: arbitrary-sleep
                     wait_time += 1
             except Exception as e:
                 logger.error(f"Error checking last access for {identity_type} {identity_name}: {str(e)}")
