@@ -15,10 +15,10 @@ phases:
       - |
         if [[ $MULTI_ACCOUNT_SCAN = 'true' ]]; then
           echo "Building multi-account template"
-          sam build --use-container --template template-multi-account.yaml
+          sam build --template template-multi-account.yaml
         else
           echo "Building single-account template"
-          sam build --use-container --template template.yaml
+          sam build --template template.yaml
         fi
       - echo "Build completed, checking build directory:"
       - ls -la .aws-sam/build/

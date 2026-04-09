@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: ReSCO AIML Multi-Account Security Assessment Solution
+Description: AIML Multi-Account Security Assessment Solution
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -31,43 +31,43 @@ Parameters:
     Type: String
     Description: GitHub branch to build from
     Default: add-agentcore
-  
+
   ReSCORole:
-    Description: 'The role that ReSCO should assume to perform the assessment.'
+    Description: "The role that ReSCO should assume to perform the assessment."
     Type: String
     Default: ReSCOAIMLMemberRole
-  
+
   MultiAccountScan:
-    Description: 'Set this to true if you want to scan all accounts in your organization.'
+    Description: "Set this to true if you want to scan all accounts in your organization."
     Type: String
     AllowedValues:
-      - 'true'
-      - 'false'
-    Default: 'false'
-  
+      - "true"
+      - "false"
+    Default: "false"
+
   MultiAccountListOverride:
-    Description: 'Specify a space delimited list of accounts to scan. Leaving this blank will scan all accounts in your organization.'
+    Description: "Specify a space delimited list of accounts to scan. Leaving this blank will scan all accounts in your organization."
     Type: String
-    Default: ''
-  
+    Default: ""
+
   EmailAddress:
-    Description: 'Specify an address if you want to receive an email when the assessment completes.'
+    Description: "Specify an address if you want to receive an email when the assessment completes."
     Type: String
-    Default: ''
+    Default: ""
     AllowedPattern: ^$|^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$
     ConstraintDescription: Must be a valid email address or leave empty
-  
+
   ConcurrentAccountScans:
-    Description: 'For multi-account scans, specify the number of accounts to scan concurrently.'
+    Description: "For multi-account scans, specify the number of accounts to scan concurrently."
     Type: String
     AllowedValues:
-      - 'Three'
-      - 'Six'
-      - 'Twelve'
-    Default: 'Three'
-  
+      - "Three"
+      - "Six"
+      - "Twelve"
+    Default: "Three"
+
   CodeBuildTimeout:
-    Description: 'Set the timeout for the CodeBuild job. The default is 300 minutes (5 hours).'
+    Description: "Set the timeout for the CodeBuild job. The default is 300 minutes (5 hours)."
     Type: Number
     MinValue: 5
     MaxValue: 2160
@@ -77,8 +77,8 @@ Conditions:
   CreateReSCORole: !Equals
     - !Ref MultiAccountScan
     - false
-  
-  CreateEmailNotification: !Not [!Equals [!Ref EmailAddress, '']]
+
+  CreateEmailNotification: !Not [!Equals [!Ref EmailAddress, ""]]
 
 Mappings:
   CodeBuildPerformanceOptionMap:
@@ -96,25 +96,25 @@ Resources:
   # Local ReSCO role for single account assessments
   ReSCOMemberRole:
     Condition: CreateReSCORole
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
-      Path: '/service-role/'
+      Path: "/service-role/"
       RoleName: ReSCOAIMLMemberRole
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root' 
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
             Action:
-              - 'sts:AssumeRole'
+              - "sts:AssumeRole"
             Condition:
               ArnEquals:
                 aws:PrincipalArn: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/service-role/ReSCOMultiAccountCodeBuildRole
       Policies:
         - PolicyName: ReSCOAIMLAssessmentPermissions
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action:
@@ -191,7 +191,7 @@ Resources:
                   - ec2:DescribeSubnets
                   - ec2:DescribeRouteTables
                   - ec2:DescribeNatGateways
-                Resource: '*'
+                Resource: "*"
 
   # S3 bucket for assessment results
   ReSCOAssessmentBucket:
@@ -206,34 +206,33 @@ Resources:
         RestrictPublicBuckets: true
 
   ReSCOAssessmentBucketPolicy:
-    Type: 'AWS::S3::BucketPolicy'
+    Type: "AWS::S3::BucketPolicy"
     Properties:
       Bucket: !Ref ReSCOAssessmentBucket
       PolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Sid: AllowSSLRequestsOnly
-            Principal: '*'
-            Action: 's3:*'
+            Principal: "*"
+            Action: "s3:*"
             Effect: Deny
             Resource:
-              - !Sub '${ReSCOAssessmentBucket.Arn}'
-              - !Sub '${ReSCOAssessmentBucket.Arn}/*'
+              - !Sub "${ReSCOAssessmentBucket.Arn}"
+              - !Sub "${ReSCOAssessmentBucket.Arn}/*"
             Condition:
               Bool:
                 aws:SecureTransport: false
-
 
   # CodeBuild role for running assessments
   ReSCOMultiAccountCodeBuildRole:
     Type: AWS::IAM::Role
     Properties:
-      Path: '/service-role/'
+      Path: "/service-role/"
       RoleName: ReSCOMultiAccountCodeBuildRole
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
-          - Action: 'sts:AssumeRole'
+          - Action: "sts:AssumeRole"
             Effect: Allow
             Principal:
               Service:
@@ -241,59 +240,59 @@ Resources:
       Policies:
         - PolicyName: LogGroup
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Action:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Effect: Allow
-                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*'
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*"
         - PolicyName: UploadtoS3
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Action:
                   - s3:PutObject
                   - s3:GetObject
                 Effect: Allow
-                Resource: !Sub '${ReSCOAssessmentBucket.Arn}/*'
+                Resource: !Sub "${ReSCOAssessmentBucket.Arn}/*"
               - Action:
                   - s3:GetObject
                   - s3:ListBucket
                 Effect: Allow
-                Resource: 
-                  - !Sub 'arn:${AWS::Partition}:s3:::resco-aiml-security-*'
-                  - !Sub 'arn:${AWS::Partition}:s3:::resco-aiml-security-*/*'
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::resco-aiml-security-*"
+                  - !Sub "arn:${AWS::Partition}:s3:::resco-aiml-security-*/*"
         - PolicyName: AssumeRole
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Action:
                   - sts:AssumeRole
                 Effect: Allow
-                Resource: !Sub 'arn:${AWS::Partition}:iam::*:role/service-role/ReSCOAIMLMemberRole'
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/service-role/ReSCOAIMLMemberRole"
         - PolicyName: ListOrganizationAccounts
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Action:
                   - organizations:ListAccounts
                   - organizations:DescribeAccount
                   - organizations:ListTagsForResource
                 Effect: Allow
-                Resource: '*'
+                Resource: "*"
         - PolicyName: CloudFormationPermissions
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Action:
                   - cloudformation:*
                 Effect: Allow
-                Resource: '*'
+                Resource: "*"
         - PolicyName: SAMPermissions
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               - Action:
                   - lambda:*
@@ -326,7 +325,7 @@ Resources:
                   - s3:DeleteObject
                   - s3:DeleteObjectVersion
                 Effect: Allow
-                Resource: '*'
+                Resource: "*"
 
   # CodeBuild project for running assessments
   ReSCOMultiAccountCodeBuild:
@@ -334,7 +333,12 @@ Resources:
     Properties:
       Name: ReSCOMultiAccountCodeBuild
       Environment:
-        ComputeType: !FindInMap [CodeBuildPerformanceOptionMap, !Ref ConcurrentAccountScans, 'CodeBuildComputeType']
+        ComputeType:
+          !FindInMap [
+            CodeBuildPerformanceOptionMap,
+            !Ref ConcurrentAccountScans,
+            "CodeBuildComputeType",
+          ]
         Image: "aws/codebuild/amazonlinux2-x86_64-standard:4.0"
         Type: "LINUX_CONTAINER"
         EnvironmentVariables:
@@ -363,7 +367,12 @@ Resources:
             Value: !Sub ${AWS::AccountId}
             Type: PLAINTEXT
           - Name: PARALLEL_ACCOUNTS
-            Value: !FindInMap [CodeBuildPerformanceOptionMap, !Ref ConcurrentAccountScans, 'ParallelAccounts']
+            Value:
+              !FindInMap [
+                CodeBuildPerformanceOptionMap,
+                !Ref ConcurrentAccountScans,
+                "ParallelAccounts",
+              ]
             Type: PLAINTEXT
       Description: Run ReSCO AIML assessment
       ServiceRole: !GetAtt ReSCOMultiAccountCodeBuildRole.Arn
@@ -378,16 +387,16 @@ Resources:
 
   # Lambda function to start CodeBuild
   CodeBuildStartBuildLambdaRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
               Service: lambda.amazonaws.com
             Action:
-              - 'sts:AssumeRole'
+              - "sts:AssumeRole"
       Path: /
       ManagedPolicyArns:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
@@ -397,7 +406,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - 'codebuild:StartBuild'
+                  - "codebuild:StartBuild"
                 Resource: !GetAtt ReSCOMultiAccountCodeBuild.Arn
 
   CodeBuildStartBuildLambda:
@@ -464,7 +473,7 @@ Resources:
     Condition: CreateEmailNotification
     Type: AWS::SNS::Topic
     Properties:
-      Subscription: 
+      Subscription:
         - Endpoint: !Ref EmailAddress
           Protocol: email
 
@@ -474,12 +483,12 @@ Resources:
     Properties:
       PolicyDocument:
         Id: snsNotificationsPolicy
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Sid: Allow events
             Effect: Allow
             Principal:
-              Service: 'events.amazonaws.com'
+              Service: "events.amazonaws.com"
             Action:
               - sns:Publish
             Resource: !Ref ReSCONotificationTopic
@@ -517,10 +526,10 @@ Resources:
               "You can view your results in the <bucket> bucket."
 
 Outputs:
-  AccountID: 
+  AccountID:
     Description: ID that ReSCO is running from
     Value: !GetAtt ReSCOMultiAccountCodeBuildRole.Arn
-  
+
   AssessmentBucket:
     Description: S3 bucket containing assessment results
     Value: !Ref ReSCOAssessmentBucket

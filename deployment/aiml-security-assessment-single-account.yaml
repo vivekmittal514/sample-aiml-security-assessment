@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: ReSCO AIML Single-Account Security Assessment Solution
+Description: AIML Single-Account Security Assessment Solution
 
 Metadata:
   AWS::CloudFormation::Interface:

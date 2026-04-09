@@ -1,35 +1,35 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: This template deploys the roles needed for ReSCO AIML Assessment to run in each member account.
+Description: This template deploys the roles needed for the AIML Security Assessment to run in each member account.
 
 Parameters:
   ReSCOAccountID:
-    Description: 'Specifies the account ID where ReSCO AIML Assessment will run from.'
+    Description: "Specifies the account ID where AIML Security Assessment will run from."
     Type: String
-    Default: '012345678910'
+    Default: "012345678910"
     AllowedPattern: \d{12}
     ConstraintDescription: Enter the 12 digit account ID with no spaces.
 
 Resources:
   ReSCOMemberRole:
-    Type: 'AWS::IAM::Role'
+    Type: "AWS::IAM::Role"
     Properties:
-      Path: '/service-role/'
+      Path: "/service-role/"
       RoleName: ReSCOAIMLMemberRole
       AssumeRolePolicyDocument:
-        Version: '2012-10-17'
+        Version: "2012-10-17"
         Statement:
           - Effect: Allow
             Principal:
-              AWS: !Sub 'arn:${AWS::Partition}:iam::${ReSCOAccountID}:root'
+              AWS: !Sub "arn:${AWS::Partition}:iam::${ReSCOAccountID}:root"
             Action:
-              - 'sts:AssumeRole'
+              - "sts:AssumeRole"
             Condition:
               ArnEquals:
                 aws:PrincipalArn: !Sub arn:${AWS::Partition}:iam::${ReSCOAccountID}:role/service-role/ReSCOMultiAccountCodeBuildRole
       Policies:
         - PolicyName: ReSCOAIMLAssessmentPermissions
           PolicyDocument:
-            Version: '2012-10-17'
+            Version: "2012-10-17"
             Statement:
               # IAM Permissions for assessment
               - Effect: Allow
@@ -47,14 +47,14 @@ Resources:
                   - iam:GenerateServiceLastAccessedDetails
                   - iam:GetServiceLastAccessedDetails
                   - sts:GetCallerIdentity
-                Resource: '*'
+                Resource: "*"
               # Bedrock Assessment Permissions
               - Effect: Allow
                 Action:
                   - bedrock:ListGuardrails
                   - bedrock:GetGuardrail
                   - bedrock:GetModelInvocationLoggingConfiguration
-                Resource: '*'
+                Resource: "*"
               # Bedrock Agent Permissions (Agents for Amazon Bedrock)
               - Effect: Allow
                 Action:
@@ -62,7 +62,7 @@ Resources:
                   - bedrock:GetPrompt
                   - bedrock:ListAgents
                   - bedrock:GetAgent
-                Resource: '*'
+                Resource: "*"
               # Bedrock AgentCore Permissions
               - Effect: Allow
                 Action:
@@ -71,7 +71,7 @@ Resources:
                   - bedrock-agentcore:ListMemories
                   - bedrock-agentcore:GetMemory
                   - bedrock-agentcore:ListGateways
-                Resource: '*'
+                Resource: "*"
               # SageMaker Assessment Permissions
               - Effect: Allow
                 Action:
@@ -90,26 +90,26 @@ Resources:
                   - sagemaker:DescribeProcessingJob
                   - sagemaker:ListMonitoringSchedules
                   - sagemaker:DescribeMonitoringSchedule
-                Resource: '*'
+                Resource: "*"
               # CloudTrail Permissions
               - Effect: Allow
                 Action:
                   - cloudtrail:ListTrails
                   - cloudtrail:GetTrail
                   - cloudtrail:GetEventSelectors
-                Resource: '*'
+                Resource: "*"
               # Lambda Permissions
               - Effect: Allow
                 Action:
                   - lambda:ListFunctions
-                Resource: '*'
+                Resource: "*"
               # ECS Permissions
               - Effect: Allow
                 Action:
                   - ecs:ListClusters
                   - ecs:ListTasks
                   - ecs:DescribeTasks
-                Resource: '*'
+                Resource: "*"
               # EC2 Permissions
               - Effect: Allow
                 Action:
@@ -118,25 +118,25 @@ Resources:
                   - ec2:DescribeSubnets
                   - ec2:DescribeRouteTables
                   - ec2:DescribeNatGateways
-                Resource: '*'
+                Resource: "*"
               # ECR Permissions
               - Effect: Allow
                 Action:
                   - ecr:DescribeRepositories
                   - ecr:GetRepositoryPolicy
-                Resource: '*'
+                Resource: "*"
               # CloudWatch Logs Permissions
               - Effect: Allow
                 Action:
                   - logs:DescribeLogGroups
                   - logs:DescribeLogStreams
-                Resource: '*'
+                Resource: "*"
               # KMS Permissions
               - Effect: Allow
                 Action:
                   - kms:DescribeKey
                   - kms:ListAliases
-                Resource: '*'
+                Resource: "*"
               # GuardDuty Permissions
               - Effect: Allow
                 Action:
@@ -151,7 +151,7 @@ Resources:
                   - guardduty:DescribeMalwareScans
                   - guardduty:GetRemainingFreeTrialDays
                   - guardduty:GetUsageStatistics
-                Resource: '*'
+                Resource: "*"
               # Allow access to central assessment bucket
               - Effect: Allow
                 Action:
@@ -160,13 +160,13 @@ Resources:
                   - s3:DeleteObject
                   - s3:ListBucket
                 Resource:
-                  - 'arn:aws:s3:::*resco*assessment*'
-                  - 'arn:aws:s3:::*resco*assessment*/*'
+                  - "arn:aws:s3:::*resco*assessment*"
+                  - "arn:aws:s3:::*resco*assessment*/*"
               # Allow Lambda execution roles to access central bucket
               - Effect: Allow
                 Action:
                   - sts:AssumeRole
-                Resource: 'arn:aws:iam::*:role/resco-aiml-security-*'
+                Resource: "arn:aws:iam::*:role/resco-aiml-security-*"
               # SAM/CloudFormation deployment permissions (required for multi-account flow)
               - Effect: Allow
                 Action:
@@ -183,14 +183,14 @@ Resources:
                   - cloudformation:GetTemplateSummary
                   - cloudformation:ListStackResources
                 Resource:
-                  - !Sub 'arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/resco-aiml-security-*/*'
-                  - !Sub 'arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*'
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/resco-aiml-security-*/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*"
               - Effect: Allow
                 Action:
                   - cloudformation:GetTemplateSummary
                   - cloudformation:CreateChangeSet
                 Resource:
-                  - !Sub 'arn:${AWS::Partition}:cloudformation:*:aws:transform/Serverless-2016-10-31'
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:aws:transform/Serverless-2016-10-31"
               # Lambda deployment permissions
               - Effect: Allow
                 Action:
@@ -207,7 +207,7 @@ Resources:
                   - lambda:ListTags
                   - lambda:InvokeFunction
                 Resource:
-                  - !Sub 'arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:resco-aiml-*'
+                  - !Sub "arn:${AWS::Partition}:lambda:*:${AWS::AccountId}:function:resco-aiml-*"
               # IAM role management for SAM-deployed Lambda roles
               - Effect: Allow
                 Action:
@@ -223,7 +223,7 @@ Resources:
                   - iam:TagRole
                   - iam:UntagRole
                 Resource:
-                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/resco-aiml-*'
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/resco-aiml-*"
               # Step Functions deployment permissions
               - Effect: Allow
                 Action:
@@ -237,8 +237,8 @@ Resources:
                   - states:DescribeExecution
                   - states:ListExecutions
                 Resource:
-                  - !Sub 'arn:${AWS::Partition}:states:*:${AWS::AccountId}:stateMachine:AIMLAssessment*'
-                  - !Sub 'arn:${AWS::Partition}:states:*:${AWS::AccountId}:execution:AIMLAssessment*:*'
+                  - !Sub "arn:${AWS::Partition}:states:*:${AWS::AccountId}:stateMachine:AIMLAssessment*"
+                  - !Sub "arn:${AWS::Partition}:states:*:${AWS::AccountId}:execution:AIMLAssessment*:*"
               # S3 permissions for SAM deployment artifacts and assessment results
               - Effect: Allow
                 Action:
@@ -262,10 +262,10 @@ Resources:
                   - s3:DeleteObject
                   - s3:DeleteObjectVersion
                 Resource:
-                  - 'arn:aws:s3:::resco-aiml-security-*'
-                  - 'arn:aws:s3:::resco-aiml-security-*/*'
-                  - 'arn:aws:s3:::aws-sam-cli-managed-default-*'
-                  - 'arn:aws:s3:::aws-sam-cli-managed-default-*/*'
+                  - "arn:aws:s3:::resco-aiml-security-*"
+                  - "arn:aws:s3:::resco-aiml-security-*/*"
+                  - "arn:aws:s3:::aws-sam-cli-managed-default-*"
+                  - "arn:aws:s3:::aws-sam-cli-managed-default-*/*"
 
 Outputs:
   ReSCOMemberRoleArn:
