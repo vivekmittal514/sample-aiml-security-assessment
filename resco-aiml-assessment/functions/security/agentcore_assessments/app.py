@@ -1186,13 +1186,615 @@ def check_agentcore_memory_configuration() -> List[Dict[str, Any]]:
 
 
 
+def check_agentcore_vpc_endpoints() -> List[Dict[str, Any]]:
+    """
+    Check for AWS PrivateLink VPC endpoints for AgentCore.
+
+    Validates:
+    - VPC endpoints exist for bedrock-agentcore services
+    - Private connectivity is configured
+
+    Returns:
+        List of findings
+    """
+    findings = []
+
+    try:
+        logger.info("Checking for AgentCore VPC endpoints")
+
+        # Get current region
+        session = boto3.session.Session()
+        current_region = session.region_name
+
+        # AgentCore VPC endpoint service names
+        agentcore_endpoints = [
+            f'com.amazonaws.{current_region}.bedrock-agentcore',
+            f'com.amazonaws.{current_region}.bedrock-agentcore-control',
+            f'com.amazonaws.{current_region}.bedrock-agentcore-runtime'
+        ]
+
+        # Get all VPCs
+        vpcs_response = ec2_client.describe_vpcs()
+        vpcs = vpcs_response.get('Vpcs', [])
+
+        if not vpcs:
+            findings.append(create_finding(
+                finding_name="AgentCore VPC Endpoints Check",
+                finding_details="No VPCs found in the account",
+                resolution="N/A",
+                reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/vpc.html",
+                severity=SeverityEnum.NA,
+                status=StatusEnum.NA
+            ))
+            return findings
+
+        vpc_ids = [vpc['VpcId'] for vpc in vpcs]
+
+        # Get all VPC endpoints
+        endpoints_response = ec2_client.describe_vpc_endpoints()
+        all_endpoints = endpoints_response.get('VpcEndpoints', [])
+
+        # Check for AgentCore endpoints
+        found_agentcore_endpoints = []
+        for endpoint in all_endpoints:
+            service_name = endpoint.get('ServiceName', '')
+            if 'agentcore' in service_name.lower() or 'bedrock-agentcore' in service_name.lower():
+                found_agentcore_endpoints.append({
+                    'vpc_id': endpoint.get('VpcId'),
+                    'service': service_name,
+                    'state': endpoint.get('State')
+                })
+
+        if not found_agentcore_endpoints:
+            findings.append(create_finding(
+                finding_name="AgentCore VPC Endpoints Missing",
+                finding_details=f"No AgentCore VPC endpoints found in {len(vpc_ids)} VPCs. AgentCore API traffic traverses public internet, exposing it to interception.",
+                resolution="Create VPC interface endpoints for AgentCore services:\n" +
+                         "1. com.amazonaws.region.bedrock-agentcore\n" +
+                         "2. com.amazonaws.region.bedrock-agentcore-control\n" +
+                         "3. com.amazonaws.region.bedrock-agentcore-runtime\n" +
+                         "This enables private connectivity via AWS PrivateLink",
+                reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/vpc.html",
+                severity=SeverityEnum.HIGH,
+                status=StatusEnum.FAILED
+            ))
+        else:
+            # Check endpoint state
+            unhealthy_endpoints = [e for e in found_agentcore_endpoints if e['state'] != 'available']
+
+            if unhealthy_endpoints:
+                findings.append(create_finding(
+                    finding_name="AgentCore VPC Endpoints Unhealthy",
+                    finding_details=f"Found {len(unhealthy_endpoints)} AgentCore VPC endpoints in non-available state",
+                    resolution="Investigate and resolve VPC endpoint issues",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/vpc.html",
+                    severity=SeverityEnum.MEDIUM,
+                    status=StatusEnum.FAILED
+                ))
+            else:
+                endpoint_details = ', '.join([f"{e['service']} in {e['vpc_id']}" for e in found_agentcore_endpoints])
+                findings.append(create_finding(
+                    finding_name="AgentCore VPC Endpoints Check",
+                    finding_details=f"AgentCore VPC endpoints configured: {endpoint_details}",
+                    resolution="N/A",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/vpc.html",
+                    severity=SeverityEnum.NA,
+                    status=StatusEnum.PASSED
+                ))
+
+    except Exception as e:
+        logger.error(f"Error in VPC endpoints check: {e}")
+        findings.append(create_finding(
+            finding_name="AgentCore VPC Endpoints Check",
+            finding_details=f"Error during check: {str(e)}",
+            resolution="Investigate error and retry assessment",
+            reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/vpc.html",
+            severity=SeverityEnum.MEDIUM,
+            status=StatusEnum.FAILED
+        ))
+
+    return findings
+
+
+def check_agentcore_service_linked_role() -> List[Dict[str, Any]]:
+    """
+    Check if the AgentCore service-linked role exists and is properly configured.
+
+    The AWSServiceRoleForBedrockAgentCoreNetwork role is required for VPC ENI creation.
+
+    Returns:
+        List of findings
+    """
+    findings = []
+
+    try:
+        logger.info("Checking AgentCore service-linked role")
+
+        slr_name = 'AWSServiceRoleForBedrockAgentCoreNetwork'
+
+        try:
+            role_response = iam_client.get_role(RoleName=slr_name)
+            role = role_response.get('Role', {})
+
+            # Verify the role is properly configured
+            assume_role_policy = role.get('AssumeRolePolicyDocument', {})
+
+            # Check if the trust policy allows bedrock-agentcore service
+            statements = assume_role_policy.get('Statement', [])
+            has_correct_principal = False
+
+            for statement in statements:
+                principal = statement.get('Principal', {})
+                service = principal.get('Service', '')
+                if isinstance(service, list):
+                    if any('agentcore' in s.lower() for s in service):
+                        has_correct_principal = True
+                elif 'agentcore' in service.lower():
+                    has_correct_principal = True
+
+            if has_correct_principal:
+                findings.append(create_finding(
+                    finding_name="AgentCore Service-Linked Role Check",
+                    finding_details=f"Service-linked role '{slr_name}' exists and is properly configured for AgentCore VPC networking",
+                    resolution="N/A",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-vpc.html",
+                    severity=SeverityEnum.NA,
+                    status=StatusEnum.PASSED
+                ))
+            else:
+                findings.append(create_finding(
+                    finding_name="AgentCore Service-Linked Role Misconfigured",
+                    finding_details=f"Service-linked role '{slr_name}' exists but may have incorrect trust policy",
+                    resolution="Delete and recreate the service-linked role by enabling VPC configuration on an AgentCore Runtime",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-vpc.html",
+                    severity=SeverityEnum.MEDIUM,
+                    status=StatusEnum.FAILED
+                ))
+
+        except iam_client.exceptions.NoSuchEntityException:
+            findings.append(create_finding(
+                finding_name="AgentCore Service-Linked Role Missing",
+                finding_details=f"Service-linked role '{slr_name}' does not exist. VPC configuration for AgentCore Runtimes will fail without this role.",
+                resolution="The service-linked role is automatically created when you configure VPC for an AgentCore Runtime. Ensure IAM permissions allow service-linked role creation.",
+                reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-vpc.html",
+                severity=SeverityEnum.MEDIUM,
+                status=StatusEnum.FAILED
+            ))
+
+    except Exception as e:
+        logger.error(f"Error in service-linked role check: {e}")
+        findings.append(create_finding(
+            finding_name="AgentCore Service-Linked Role Check",
+            finding_details=f"Error during check: {str(e)}",
+            resolution="Investigate error and retry assessment",
+            reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-vpc.html",
+            severity=SeverityEnum.MEDIUM,
+            status=StatusEnum.FAILED
+        ))
+
+    return findings
+
+
+def check_agentcore_resource_based_policies() -> List[Dict[str, Any]]:
+    """
+    Check for proper resource-based policies on AgentCore resources.
+
+    Validates:
+    - Agent Runtime resource policies
+    - Gateway resource policies
+    - Memory resource policies
+
+    Returns:
+        List of findings
+    """
+    findings = []
+
+    if agentcore_client is None:
+        findings.append(create_finding(
+            finding_name="AgentCore Resource-Based Policies Check",
+            finding_details="AgentCore client not available in this region",
+            resolution="Deploy in a region where Amazon Bedrock AgentCore is available",
+            reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security_iam_service-with-iam.html",
+            severity=SeverityEnum.NA,
+            status=StatusEnum.NA
+        ))
+        return findings
+
+    try:
+        logger.info("Checking AgentCore resource-based policies")
+
+        resources_without_rbp = []
+        resources_with_rbp = []
+
+        # Check Agent Runtimes
+        try:
+            runtimes_response = agentcore_client.list_agent_runtimes()
+            runtimes = runtimes_response.get('agentRuntimes', [])
+
+            for runtime in runtimes:
+                runtime_id = runtime.get('agentRuntimeId', 'unknown')
+                runtime_name = runtime.get('agentRuntimeName', runtime_id)
+
+                try:
+                    # Try to get resource policy
+                    policy_response = agentcore_client.get_agent_runtime_resource_policy(
+                        agentRuntimeId=runtime_id
+                    )
+                    policy = policy_response.get('resourcePolicy')
+
+                    if policy:
+                        resources_with_rbp.append(f"Runtime: {runtime_name}")
+                    else:
+                        resources_without_rbp.append({
+                            'type': 'Runtime',
+                            'name': runtime_name,
+                            'id': runtime_id
+                        })
+
+                except ClientError as e:
+                    if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                        resources_without_rbp.append({
+                            'type': 'Runtime',
+                            'name': runtime_name,
+                            'id': runtime_id
+                        })
+                    else:
+                        logger.warning(f"Error checking policy for runtime {runtime_id}: {e}")
+                except AttributeError:
+                    # API method doesn't exist
+                    logger.info("get_agent_runtime_resource_policy API not available")
+                    break
+
+        except ClientError as e:
+            if e.response['Error']['Code'] != 'ResourceNotFoundException':
+                logger.warning(f"Error listing runtimes: {e}")
+
+        # Check Gateways
+        try:
+            gateways_response = agentcore_client.list_gateways()
+            gateways = gateways_response.get('gateways', [])
+
+            for gateway in gateways:
+                gateway_id = gateway.get('gatewayId', 'unknown')
+                gateway_name = gateway.get('name', gateway_id)
+
+                try:
+                    policy_response = agentcore_client.get_gateway_resource_policy(
+                        gatewayId=gateway_id
+                    )
+                    policy = policy_response.get('resourcePolicy')
+
+                    if policy:
+                        resources_with_rbp.append(f"Gateway: {gateway_name}")
+                    else:
+                        resources_without_rbp.append({
+                            'type': 'Gateway',
+                            'name': gateway_name,
+                            'id': gateway_id
+                        })
+
+                except ClientError as e:
+                    if e.response['Error']['Code'] == 'ResourceNotFoundException':
+                        resources_without_rbp.append({
+                            'type': 'Gateway',
+                            'name': gateway_name,
+                            'id': gateway_id
+                        })
+                except AttributeError:
+                    logger.info("get_gateway_resource_policy API not available")
+                    break
+
+        except (ClientError, AttributeError) as e:
+            logger.info(f"Gateway APIs not available: {e}")
+
+        # Generate findings
+        if resources_without_rbp:
+            resource_list = ', '.join([f"{r['type']} '{r['name']}'" for r in resources_without_rbp[:5]])
+            if len(resources_without_rbp) > 5:
+                resource_list += f" and {len(resources_without_rbp) - 5} more"
+
+            findings.append(create_finding(
+                finding_name="AgentCore Resource-Based Policies Missing",
+                finding_details=f"The following AgentCore resources do not have resource-based policies: {resource_list}. Without RBPs, access control relies solely on identity-based policies.",
+                resolution="Attach resource-based policies to AgentCore resources to:\n" +
+                         "1. Implement defense-in-depth access control\n" +
+                         "2. Enable cross-account access control\n" +
+                         "3. Restrict access based on source VPC or IP\n" +
+                         "4. Implement hierarchical authorization for Agent Runtimes",
+                reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security_iam_service-with-iam.html",
+                severity=SeverityEnum.HIGH,
+                status=StatusEnum.FAILED
+            ))
+
+        if not findings:
+            if resources_with_rbp:
+                findings.append(create_finding(
+                    finding_name="AgentCore Resource-Based Policies Check",
+                    finding_details=f"Resource-based policies configured on: {', '.join(resources_with_rbp)}",
+                    resolution="N/A",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security_iam_service-with-iam.html",
+                    severity=SeverityEnum.NA,
+                    status=StatusEnum.PASSED
+                ))
+            else:
+                findings.append(create_finding(
+                    finding_name="AgentCore Resource-Based Policies Check",
+                    finding_details="No AgentCore resources found to check for resource-based policies",
+                    resolution="N/A",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security_iam_service-with-iam.html",
+                    severity=SeverityEnum.NA,
+                    status=StatusEnum.NA
+                ))
+
+    except Exception as e:
+        logger.error(f"Error in resource-based policies check: {e}")
+        findings.append(create_finding(
+            finding_name="AgentCore Resource-Based Policies Check",
+            finding_details=f"Error during check: {str(e)}",
+            resolution="Investigate error and retry assessment",
+            reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security_iam_service-with-iam.html",
+            severity=SeverityEnum.MEDIUM,
+            status=StatusEnum.FAILED
+        ))
+
+    return findings
+
+
+def check_agentcore_policy_engine_encryption() -> List[Dict[str, Any]]:
+    """
+    Check if AgentCore Policy Engines are encrypted with customer-managed KMS keys.
+
+    Policy engines store authorization rules that determine what agents can do.
+    Unencrypted policy data exposes security controls.
+
+    Returns:
+        List of findings
+    """
+    findings = []
+
+    if agentcore_client is None:
+        findings.append(create_finding(
+            finding_name="AgentCore Policy Engine Encryption Check",
+            finding_details="AgentCore client not available in this region",
+            resolution="Deploy in a region where Amazon Bedrock AgentCore is available",
+            reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html",
+            severity=SeverityEnum.NA,
+            status=StatusEnum.NA
+        ))
+        return findings
+
+    try:
+        logger.info("Checking AgentCore Policy Engine encryption")
+
+        try:
+            # List policy engines
+            policy_engines_response = agentcore_client.list_policy_engines()
+            policy_engines = policy_engines_response.get('policyEngines', [])
+
+            if not policy_engines:
+                findings.append(create_finding(
+                    finding_name="AgentCore Policy Engine Encryption Check",
+                    finding_details="No Policy Engines found",
+                    resolution="N/A",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html",
+                    severity=SeverityEnum.NA,
+                    status=StatusEnum.NA
+                ))
+                return findings
+
+            engines_without_cmk = []
+            engines_with_cmk = []
+
+            for engine in policy_engines:
+                engine_id = engine.get('policyEngineId', 'unknown')
+                engine_name = engine.get('name', engine_id)
+
+                try:
+                    engine_details = agentcore_client.get_policy_engine(policyEngineId=engine_id)
+
+                    encryption_key_arn = engine_details.get('encryptionKeyArn')
+
+                    if encryption_key_arn:
+                        engines_with_cmk.append(engine_name)
+                    else:
+                        engines_without_cmk.append({
+                            'name': engine_name,
+                            'id': engine_id
+                        })
+
+                except ClientError as e:
+                    if e.response['Error']['Code'] != 'ResourceNotFoundException':
+                        logger.warning(f"Error getting policy engine {engine_id}: {e}")
+
+            if engines_without_cmk:
+                engine_list = ', '.join([f"'{e['name']}'" for e in engines_without_cmk])
+                findings.append(create_finding(
+                    finding_name="AgentCore Policy Engine Encryption Missing",
+                    finding_details=f"The following Policy Engines do not use customer-managed KMS encryption: {engine_list}. Policy data containing authorization rules is not protected with CMK.",
+                    resolution="1. Create a customer-managed KMS key with appropriate key policy\n" +
+                             "2. Grant Policy in AgentCore permissions via kms:CreateGrant\n" +
+                             "3. Create new policy engines with --encryption-key-arn parameter\n" +
+                             "Note: Encryption cannot be added to existing policy engines",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html",
+                    severity=SeverityEnum.HIGH,
+                    status=StatusEnum.FAILED
+                ))
+
+            if engines_with_cmk:
+                findings.append(create_finding(
+                    finding_name="AgentCore Policy Engine Encryption Check",
+                    finding_details=f"Policy Engines with CMK encryption: {', '.join(engines_with_cmk)}",
+                    resolution="N/A",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html",
+                    severity=SeverityEnum.NA,
+                    status=StatusEnum.PASSED
+                ))
+
+            if not findings:
+                findings.append(create_finding(
+                    finding_name="AgentCore Policy Engine Encryption Check",
+                    finding_details=f"Checked {len(policy_engines)} Policy Engines",
+                    resolution="N/A",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html",
+                    severity=SeverityEnum.NA,
+                    status=StatusEnum.NA
+                ))
+
+        except AttributeError:
+            # API not available
+            findings.append(create_finding(
+                finding_name="AgentCore Policy Engine Encryption Check",
+                finding_details="Policy Engine APIs not yet available in bedrock-agentcore-control client",
+                resolution="N/A - Check may need to be updated when APIs become available",
+                reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html",
+                severity=SeverityEnum.NA,
+                status=StatusEnum.NA
+            ))
+
+    except Exception as e:
+        logger.error(f"Error in policy engine encryption check: {e}")
+        findings.append(create_finding(
+            finding_name="AgentCore Policy Engine Encryption Check",
+            finding_details=f"Error during check: {str(e)}",
+            resolution="Investigate error and retry assessment",
+            reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html",
+            severity=SeverityEnum.MEDIUM,
+            status=StatusEnum.FAILED
+        ))
+
+    return findings
+
+
+def check_agentcore_gateway_encryption() -> List[Dict[str, Any]]:
+    """
+    Check if AgentCore Gateways are encrypted with customer-managed KMS keys.
+
+    Gateway configurations include tool definitions, target endpoints, and
+    API schemas which may contain sensitive information.
+
+    Returns:
+        List of findings
+    """
+    findings = []
+
+    if agentcore_client is None:
+        findings.append(create_finding(
+            finding_name="AgentCore Gateway Encryption Check",
+            finding_details="AgentCore client not available in this region",
+            resolution="Deploy in a region where Amazon Bedrock AgentCore is available",
+            reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.html",
+            severity=SeverityEnum.NA,
+            status=StatusEnum.NA
+        ))
+        return findings
+
+    try:
+        logger.info("Checking AgentCore Gateway encryption")
+
+        try:
+            gateways_response = agentcore_client.list_gateways()
+            gateways = gateways_response.get('gateways', [])
+
+            if not gateways:
+                findings.append(create_finding(
+                    finding_name="AgentCore Gateway Encryption Check",
+                    finding_details="No Gateways found",
+                    resolution="N/A",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.html",
+                    severity=SeverityEnum.NA,
+                    status=StatusEnum.NA
+                ))
+                return findings
+
+            gateways_without_cmk = []
+            gateways_with_cmk = []
+
+            for gateway in gateways:
+                gateway_id = gateway.get('gatewayId', 'unknown')
+                gateway_name = gateway.get('name', gateway_id)
+
+                try:
+                    gateway_details = agentcore_client.get_gateway(gatewayId=gateway_id)
+
+                    # Check for customer-managed KMS key
+                    encryption_key_arn = gateway_details.get('kmsKeyArn') or gateway_details.get('encryptionKeyArn')
+
+                    if encryption_key_arn:
+                        gateways_with_cmk.append(gateway_name)
+                    else:
+                        gateways_without_cmk.append({
+                            'name': gateway_name,
+                            'id': gateway_id
+                        })
+
+                except ClientError as e:
+                    if e.response['Error']['Code'] != 'ResourceNotFoundException':
+                        logger.warning(f"Error getting gateway {gateway_id}: {e}")
+
+            if gateways_without_cmk:
+                gateway_list = ', '.join([f"'{g['name']}'" for g in gateways_without_cmk])
+                findings.append(create_finding(
+                    finding_name="AgentCore Gateway Encryption Missing",
+                    finding_details=f"The following Gateways do not use customer-managed KMS encryption: {gateway_list}. Gateway configuration data uses AWS-managed keys.",
+                    resolution="1. Create gateways with customer-managed KMS keys for additional control\n" +
+                             "2. AWS-managed keys are single-tenant and region-specific\n" +
+                             "3. Consider CMK for enhanced audit capabilities and key rotation control",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.html",
+                    severity=SeverityEnum.LOW,
+                    status=StatusEnum.FAILED
+                ))
+
+            if gateways_with_cmk:
+                findings.append(create_finding(
+                    finding_name="AgentCore Gateway Encryption Check",
+                    finding_details=f"Gateways with CMK encryption: {', '.join(gateways_with_cmk)}",
+                    resolution="N/A",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.html",
+                    severity=SeverityEnum.NA,
+                    status=StatusEnum.PASSED
+                ))
+
+            if not findings:
+                findings.append(create_finding(
+                    finding_name="AgentCore Gateway Encryption Check",
+                    finding_details=f"Checked {len(gateways)} Gateways",
+                    resolution="N/A",
+                    reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.html",
+                    severity=SeverityEnum.NA,
+                    status=StatusEnum.NA
+                ))
+
+        except AttributeError:
+            findings.append(create_finding(
+                finding_name="AgentCore Gateway Encryption Check",
+                finding_details="Gateway APIs not yet available in bedrock-agentcore-control client",
+                resolution="N/A - Check may need to be updated when APIs become available",
+                reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.html",
+                severity=SeverityEnum.NA,
+                status=StatusEnum.NA
+            ))
+
+    except Exception as e:
+        logger.error(f"Error in gateway encryption check: {e}")
+        findings.append(create_finding(
+            finding_name="AgentCore Gateway Encryption Check",
+            finding_details=f"Error during check: {str(e)}",
+            resolution="Investigate error and retry assessment",
+            reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.html",
+            severity=SeverityEnum.MEDIUM,
+            status=StatusEnum.FAILED
+        ))
+
+    return findings
+
+
 def check_agentcore_gateway_configuration() -> List[Dict[str, Any]]:
     """
     Check Gateway resource configuration.
-    
+
     Note: Gateway APIs may not be available in bedrock-agentcore-control yet.
     This check will gracefully handle if the API doesn't exist.
-    
+
     Returns:
         List of findings
     """
@@ -1329,7 +1931,12 @@ def lambda_handler(event, context):
             ('Encryption', check_agentcore_encryption),
             ('Browser Tool Recording', check_browser_tool_recording),
             ('Memory Configuration', check_agentcore_memory_configuration),
-            ('Gateway Configuration', check_agentcore_gateway_configuration)
+            ('Gateway Configuration', check_agentcore_gateway_configuration),
+            ('VPC Endpoints', check_agentcore_vpc_endpoints),
+            ('Service-Linked Role', check_agentcore_service_linked_role),
+            ('Resource-Based Policies', check_agentcore_resource_based_policies),
+            ('Policy Engine Encryption', check_agentcore_policy_engine_encryption),
+            ('Gateway Encryption', check_agentcore_gateway_encryption)
         ]
         
         for check_name, check_func in checks:

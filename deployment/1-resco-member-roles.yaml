@@ -46,6 +46,7 @@ Resources:
                   - iam:GetPolicyVersion
                   - iam:GenerateServiceLastAccessedDetails
                   - iam:GetServiceLastAccessedDetails
+                  - iam:GetRole
                   - sts:GetCallerIdentity
                 Resource: "*"
               # Bedrock Assessment Permissions
@@ -54,6 +55,8 @@ Resources:
                   - bedrock:ListGuardrails
                   - bedrock:GetGuardrail
                   - bedrock:GetModelInvocationLoggingConfiguration
+                  - bedrock:ListCustomModels
+                  - bedrock:GetCustomModel
                 Resource: "*"
               # Bedrock Agent Permissions (Agents for Amazon Bedrock)
               - Effect: Allow
@@ -63,6 +66,14 @@ Resources:
                   - bedrock:ListAgents
                   - bedrock:GetAgent
                 Resource: "*"
+              # Bedrock Agent Service Permissions (Knowledge Bases, Flows)
+              - Effect: Allow
+                Action:
+                  - bedrock-agent:ListKnowledgeBases
+                  - bedrock-agent:GetKnowledgeBase
+                  - bedrock-agent:ListFlows
+                  - bedrock-agent:GetFlow
+                Resource: "*"
               # Bedrock AgentCore Permissions
               - Effect: Allow
                 Action:
@@ -71,6 +82,11 @@ Resources:
                   - bedrock-agentcore:ListMemories
                   - bedrock-agentcore:GetMemory
                   - bedrock-agentcore:ListGateways
+                  - bedrock-agentcore:GetGateway
+                  - bedrock-agentcore:ListPolicyEngines
+                  - bedrock-agentcore:GetPolicyEngine
+                  - bedrock-agentcore:GetAgentRuntimeResourcePolicy
+                  - bedrock-agentcore:GetGatewayResourcePolicy
                 Resource: "*"
               # SageMaker Assessment Permissions
               - Effect: Allow
@@ -84,12 +100,19 @@ Resources:
                   - sagemaker:ListModelPackageGroups
                   - sagemaker:ListModelPackages
                   - sagemaker:ListFeatureGroups
+                  - sagemaker:DescribeFeatureGroup
                   - sagemaker:ListPipelines
                   - sagemaker:ListPipelineExecutions
                   - sagemaker:ListProcessingJobs
                   - sagemaker:DescribeProcessingJob
                   - sagemaker:ListMonitoringSchedules
                   - sagemaker:DescribeMonitoringSchedule
+                  - sagemaker:ListModels
+                  - sagemaker:DescribeModel
+                  - sagemaker:ListEndpoints
+                  - sagemaker:DescribeEndpoint
+                  - sagemaker:ListDataQualityJobDefinitions
+                  - sagemaker:DescribeDataQualityJobDefinition
                 Resource: "*"
               # CloudTrail Permissions
               - Effect: Allow
@@ -131,6 +154,14 @@ Resources:
                   - logs:DescribeLogGroups
                   - logs:DescribeLogStreams
                 Resource: "*"
+              # S3 Bucket Permissions for encryption checks
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketEncryption
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketTagging
+                  - s3:HeadBucket
+                Resource: "arn:aws:s3:::*"
               # KMS Permissions
               - Effect: Allow
                 Action:

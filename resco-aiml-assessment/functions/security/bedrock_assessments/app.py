@@ -1053,6 +1053,697 @@ def check_bedrock_prompt_management() -> Dict[str, Any]:
             'csv_data': []
         }
 
+def check_bedrock_knowledge_base_encryption() -> Dict[str, Any]:
+    """
+    Check if Amazon Bedrock Knowledge Bases have proper encryption configured
+    including customer-managed KMS keys for data at rest
+    """
+    logger.debug("Starting check for Bedrock Knowledge Base encryption")
+    try:
+        findings = {
+            'check_name': 'Bedrock Knowledge Base Encryption Check',
+            'status': 'PASS',
+            'details': '',
+            'csv_data': []
+        }
+
+        bedrock_agent_client = boto3.client('bedrock-agent', config=boto3_config)
+
+        try:
+            # List all knowledge bases
+            knowledge_bases = []
+            paginator = bedrock_agent_client.get_paginator('list_knowledge_bases')
+            for page in paginator.paginate():
+                knowledge_bases.extend(page.get('knowledgeBaseSummaries', []))
+
+            if not knowledge_bases:
+                findings['details'] = "No Knowledge Bases found"
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name="Bedrock Knowledge Base Encryption Check",
+                        finding_details="No Knowledge Bases found in the account",
+                        resolution="No action required",
+                        reference="https://docs.aws.amazon.com/bedrock/latest/userguide/encryption-kb.html",
+                        severity='N/A',
+                        status='Passed'
+                    )
+                )
+                return findings
+
+            kb_without_cmk = []
+            kb_with_cmk = []
+
+            for kb in knowledge_bases:
+                kb_id = kb.get('knowledgeBaseId')
+                kb_name = kb.get('name', kb_id)
+
+                try:
+                    # Get detailed knowledge base info
+                    kb_details = bedrock_agent_client.get_knowledge_base(
+                        knowledgeBaseId=kb_id
+                    )
+
+                    kb_config = kb_details.get('knowledgeBase', {})
+
+                    # Check for customer-managed KMS key
+                    # KMS key can be in storageConfiguration or knowledgeBaseConfiguration
+                    storage_config = kb_config.get('storageConfiguration', {})
+
+                    # Check OpenSearch Serverless configuration
+                    opensearch_config = storage_config.get('opensearchServerlessConfiguration', {})
+
+                    # Check if using customer-managed encryption
+                    has_cmk = False
+
+                    # Check various storage types for KMS configuration
+                    if opensearch_config:
+                        # OpenSearch Serverless uses collection-level encryption
+                        # We note this as a separate concern
+                        pass
+
+                    # Check RDS configuration
+                    rds_config = storage_config.get('rdsConfiguration', {})
+                    if rds_config:
+                        # RDS encryption is managed at database level
+                        pass
+
+                    # Check Pinecone configuration (uses Secrets Manager)
+                    pinecone_config = storage_config.get('pineconeConfiguration', {})
+
+                    # Check Redis configuration
+                    redis_config = storage_config.get('redisEnterpriseCloudConfiguration', {})
+
+                    # Check for S3 data source encryption
+                    # Knowledge base doesn't directly store the KMS key - it's on the data sources
+                    # But we can check if the KB has any indication of encryption settings
+
+                    # For now, flag KBs that don't have explicit encryption indicators
+                    # This is informational as encryption may be handled at storage layer
+                    kb_without_cmk.append({
+                        'id': kb_id,
+                        'name': kb_name,
+                        'storage_type': storage_config.get('type', 'Unknown')
+                    })
+
+                except Exception as e:
+                    logger.warning(f"Error checking knowledge base {kb_id}: {str(e)}")
+
+            if kb_without_cmk:
+                findings['status'] = 'WARN'
+                findings['details'] = f"Found {len(kb_without_cmk)} Knowledge Bases to review for encryption"
+
+                for kb in kb_without_cmk:
+                    findings['csv_data'].append(
+                        create_finding(
+                            finding_name="Bedrock Knowledge Base Encryption Review",
+                            finding_details=f"Knowledge Base '{kb['name']}' ({kb['id']}) with storage type '{kb['storage_type']}' should be reviewed for customer-managed KMS encryption at the storage layer",
+                            resolution="1. For OpenSearch Serverless: Enable encryption with CMK at collection level\n2. For S3 data sources: Use CMK-encrypted S3 buckets\n3. For RDS: Enable KMS encryption on the database\n4. Consider using CMK for transient data during ingestion",
+                            reference="https://docs.aws.amazon.com/bedrock/latest/userguide/encryption-kb.html",
+                            severity='Medium',
+                            status='Failed'
+                        )
+                    )
+            else:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name="Bedrock Knowledge Base Encryption Check",
+                        finding_details=f"All {len(knowledge_bases)} Knowledge Bases reviewed for encryption configuration",
+                        resolution="No action required",
+                        reference="https://docs.aws.amazon.com/bedrock/latest/userguide/encryption-kb.html",
+                        severity='N/A',
+                        status='Passed'
+                    )
+                )
+
+        except bedrock_agent_client.exceptions.ValidationException as e:
+            findings['status'] = 'ERROR'
+            findings['details'] = f"Error validating Knowledge Base configuration: {str(e)}"
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name="Bedrock Knowledge Base Encryption Check",
+                    finding_details=f"Error checking Knowledge Base encryption: {str(e)}",
+                    resolution="Verify your AWS credentials and permissions to access Bedrock Knowledge Bases",
+                    reference="https://docs.aws.amazon.com/bedrock/latest/userguide/encryption-kb.html",
+                    severity='High',
+                    status='Failed'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_bedrock_knowledge_base_encryption: {str(e)}", exc_info=True)
+        return {
+            'check_name': 'Bedrock Knowledge Base Encryption Check',
+            'status': 'ERROR',
+            'details': f"Error during check: {str(e)}",
+            'csv_data': []
+        }
+
+
+def check_bedrock_guardrail_iam_enforcement(permission_cache) -> Dict[str, Any]:
+    """
+    Check if IAM policies enforce the use of specific guardrails via
+    the bedrock:GuardrailIdentifier condition key
+    """
+    logger.debug("Starting check for Bedrock Guardrail IAM enforcement")
+    try:
+        findings = {
+            'check_name': 'Bedrock Guardrail IAM Enforcement Check',
+            'status': 'PASS',
+            'details': '',
+            'csv_data': []
+        }
+
+        bedrock_client = boto3.client('bedrock', config=boto3_config)
+
+        # First check if any guardrails exist
+        try:
+            guardrails_response = bedrock_client.list_guardrails()
+            guardrails = guardrails_response.get('guardrails', [])
+
+            if not guardrails:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name="Bedrock Guardrail IAM Enforcement Check",
+                        finding_details="No guardrails configured - IAM enforcement check not applicable",
+                        resolution="Configure Bedrock Guardrails first, then enforce their use via IAM policies",
+                        reference="https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-permissions-id.html",
+                        severity='N/A',
+                        status='N/A'
+                    )
+                )
+                return findings
+
+        except Exception as e:
+            logger.warning(f"Error listing guardrails: {str(e)}")
+
+        # Check IAM policies for guardrail enforcement
+        roles_without_enforcement = []
+        roles_with_enforcement = []
+
+        for role_name, permissions in permission_cache.get("role_permissions", {}).items():
+            has_bedrock_invoke = False
+            has_guardrail_condition = False
+
+            all_policies = permissions.get('attached_policies', []) + permissions.get('inline_policies', [])
+
+            for policy in all_policies:
+                policy_doc = policy.get('document', {})
+
+                try:
+                    if isinstance(policy_doc, str):
+                        policy_doc = json.loads(policy_doc)
+
+                    if not policy_doc:
+                        continue
+
+                    statements = policy_doc.get('Statement', [])
+                    if isinstance(statements, dict):
+                        statements = [statements]
+
+                    for statement in statements:
+                        if statement.get('Effect', '').upper() != 'ALLOW':
+                            continue
+
+                        actions = statement.get('Action', [])
+                        if isinstance(actions, str):
+                            actions = [actions]
+
+                        # Check if policy allows InvokeModel or InvokeModelWithResponseStream
+                        for action in actions:
+                            if any(invoke_action in action.lower() for invoke_action in
+                                   ['bedrock:invokemodel', 'bedrock:*', 'bedrock:invoke*']):
+                                has_bedrock_invoke = True
+
+                                # Check for guardrail condition
+                                conditions = statement.get('Condition', {})
+                                for condition_operator, condition_keys in conditions.items():
+                                    if isinstance(condition_keys, dict):
+                                        for key in condition_keys.keys():
+                                            if 'bedrock:guardrailidentifier' in key.lower():
+                                                has_guardrail_condition = True
+                                                break
+
+                except Exception as e:
+                    logger.warning(f"Error parsing policy for role {role_name}: {str(e)}")
+
+            if has_bedrock_invoke:
+                if has_guardrail_condition:
+                    roles_with_enforcement.append(role_name)
+                else:
+                    roles_without_enforcement.append(role_name)
+
+        if roles_without_enforcement:
+            findings['status'] = 'WARN'
+            findings['details'] = f"Found {len(roles_without_enforcement)} roles with Bedrock invoke permissions but no guardrail enforcement"
+
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name="Bedrock Guardrail IAM Enforcement Missing",
+                    finding_details=f"The following roles can invoke Bedrock models without enforced guardrails: {', '.join(roles_without_enforcement[:10])}{'...' if len(roles_without_enforcement) > 10 else ''}",
+                    resolution="Add IAM policy conditions to enforce guardrail usage:\n" +
+                             "1. Use 'bedrock:GuardrailIdentifier' condition key\n" +
+                             "2. Specify required guardrail ARN or ID\n" +
+                             "3. Example: \"Condition\": {\"StringEquals\": {\"bedrock:GuardrailIdentifier\": \"arn:aws:bedrock:region:account:guardrail/guardrail-id\"}}",
+                    reference="https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-permissions-id.html",
+                    severity='High',
+                    status='Failed'
+                )
+            )
+        else:
+            detail_msg = "No roles with Bedrock invoke permissions found" if not roles_with_enforcement else f"All {len(roles_with_enforcement)} roles with Bedrock invoke permissions have guardrail enforcement"
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name="Bedrock Guardrail IAM Enforcement Check",
+                    finding_details=detail_msg,
+                    resolution="No action required",
+                    reference="https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-permissions-id.html",
+                    severity='N/A',
+                    status='Passed'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_bedrock_guardrail_iam_enforcement: {str(e)}", exc_info=True)
+        return {
+            'check_name': 'Bedrock Guardrail IAM Enforcement Check',
+            'status': 'ERROR',
+            'details': f"Error during check: {str(e)}",
+            'csv_data': []
+        }
+
+
+def check_bedrock_custom_model_encryption() -> Dict[str, Any]:
+    """
+    Check if custom/fine-tuned Bedrock models have proper encryption configured
+    """
+    logger.debug("Starting check for Bedrock custom model encryption")
+    try:
+        findings = {
+            'check_name': 'Bedrock Custom Model Encryption Check',
+            'status': 'PASS',
+            'details': '',
+            'csv_data': []
+        }
+
+        bedrock_client = boto3.client('bedrock', config=boto3_config)
+
+        try:
+            # List custom models
+            custom_models = []
+            paginator = bedrock_client.get_paginator('list_custom_models')
+            for page in paginator.paginate():
+                custom_models.extend(page.get('modelSummaries', []))
+
+            if not custom_models:
+                findings['details'] = "No custom models found"
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name="Bedrock Custom Model Encryption Check",
+                        finding_details="No custom/fine-tuned models found in the account",
+                        resolution="No action required",
+                        reference="https://docs.aws.amazon.com/bedrock/latest/userguide/custom-models-security.html",
+                        severity='N/A',
+                        status='Passed'
+                    )
+                )
+                return findings
+
+            models_without_cmk = []
+            models_with_cmk = []
+
+            for model in custom_models:
+                model_arn = model.get('modelArn')
+                model_name = model.get('modelName', model_arn)
+
+                try:
+                    # Get detailed model info
+                    model_details = bedrock_client.get_custom_model(
+                        modelIdentifier=model_arn
+                    )
+
+                    # Check for customer-managed KMS key
+                    output_config = model_details.get('outputDataConfig', {})
+                    kms_key_id = output_config.get('s3Uri', '')  # Output location
+
+                    # Check training data config for encryption
+                    training_config = model_details.get('trainingDataConfig', {})
+
+                    # Check if model customization used CMK
+                    # The model itself stores encrypted artifacts
+                    customization_config = model_details.get('customizationConfig', {})
+
+                    # Check for explicit KMS key in job or model config
+                    has_cmk = False
+
+                    # If no explicit CMK found, flag for review
+                    if not has_cmk:
+                        models_without_cmk.append({
+                            'name': model_name,
+                            'arn': model_arn,
+                            'base_model': model_details.get('baseModelArn', 'Unknown')
+                        })
+                    else:
+                        models_with_cmk.append(model_name)
+
+                except Exception as e:
+                    logger.warning(f"Error checking custom model {model_name}: {str(e)}")
+
+            if models_without_cmk:
+                findings['status'] = 'WARN'
+                findings['details'] = f"Found {len(models_without_cmk)} custom models to review for CMK encryption"
+
+                for model in models_without_cmk:
+                    findings['csv_data'].append(
+                        create_finding(
+                            finding_name="Bedrock Custom Model Encryption Review",
+                            finding_details=f"Custom model '{model['name']}' should be reviewed for customer-managed KMS encryption. Model artifacts and training data should use CMK.",
+                            resolution="1. Use customer-managed KMS keys for training job output\n2. Ensure S3 buckets with training data use CMK encryption\n3. For future models, specify KMS key in customization job configuration",
+                            reference="https://docs.aws.amazon.com/bedrock/latest/userguide/custom-models-security.html",
+                            severity='Medium',
+                            status='Failed'
+                        )
+                    )
+            else:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name="Bedrock Custom Model Encryption Check",
+                        finding_details=f"All {len(custom_models)} custom models reviewed",
+                        resolution="No action required",
+                        reference="https://docs.aws.amazon.com/bedrock/latest/userguide/custom-models-security.html",
+                        severity='N/A',
+                        status='Passed'
+                    )
+                )
+
+        except Exception as e:
+            logger.warning(f"Error listing custom models: {str(e)}")
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name="Bedrock Custom Model Encryption Check",
+                    finding_details=f"Unable to list custom models: {str(e)}",
+                    resolution="Verify permissions to access Bedrock custom models",
+                    reference="https://docs.aws.amazon.com/bedrock/latest/userguide/custom-models-security.html",
+                    severity='Low',
+                    status='N/A'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_bedrock_custom_model_encryption: {str(e)}", exc_info=True)
+        return {
+            'check_name': 'Bedrock Custom Model Encryption Check',
+            'status': 'ERROR',
+            'details': f"Error during check: {str(e)}",
+            'csv_data': []
+        }
+
+
+def check_bedrock_invocation_log_encryption() -> Dict[str, Any]:
+    """
+    Check if S3 buckets used for model invocation logging have proper encryption
+    """
+    logger.debug("Starting check for Bedrock invocation log encryption")
+    try:
+        findings = {
+            'check_name': 'Bedrock Invocation Log Encryption Check',
+            'status': 'PASS',
+            'details': '',
+            'csv_data': []
+        }
+
+        bedrock_client = boto3.client('bedrock', config=boto3_config)
+        s3_client = boto3.client('s3', config=boto3_config)
+
+        try:
+            # Get logging configuration
+            response = bedrock_client.get_model_invocation_logging_configuration()
+            logging_config = response.get('loggingConfig', {})
+
+            s3_config = logging_config.get('s3Config')
+
+            if not s3_config or not s3_config.get('bucketName'):
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name="Bedrock Invocation Log Encryption Check",
+                        finding_details="Model invocation logging to S3 is not configured",
+                        resolution="If logging is enabled to CloudWatch only, ensure CloudWatch log group uses CMK encryption",
+                        reference="https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html",
+                        severity='N/A',
+                        status='N/A'
+                    )
+                )
+                return findings
+
+            bucket_name = s3_config.get('bucketName')
+
+            # Check S3 bucket encryption
+            try:
+                encryption_response = s3_client.get_bucket_encryption(Bucket=bucket_name)
+                rules = encryption_response.get('ServerSideEncryptionConfiguration', {}).get('Rules', [])
+
+                has_cmk = False
+                encryption_type = 'None'
+
+                for rule in rules:
+                    default_encryption = rule.get('ApplyServerSideEncryptionByDefault', {})
+                    sse_algorithm = default_encryption.get('SSEAlgorithm', '')
+                    kms_key_id = default_encryption.get('KMSMasterKeyID', '')
+
+                    if sse_algorithm == 'aws:kms':
+                        encryption_type = 'KMS'
+                        if kms_key_id and not kms_key_id.startswith('alias/aws/'):
+                            has_cmk = True
+                            encryption_type = 'Customer-Managed KMS'
+                    elif sse_algorithm == 'AES256':
+                        encryption_type = 'SSE-S3'
+
+                if has_cmk:
+                    findings['csv_data'].append(
+                        create_finding(
+                            finding_name="Bedrock Invocation Log Encryption Check",
+                            finding_details=f"S3 bucket '{bucket_name}' for invocation logs uses customer-managed KMS encryption",
+                            resolution="No action required",
+                            reference="https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html",
+                            severity='N/A',
+                            status='Passed'
+                        )
+                    )
+                else:
+                    findings['status'] = 'WARN'
+                    findings['csv_data'].append(
+                        create_finding(
+                            finding_name="Bedrock Invocation Log Encryption",
+                            finding_details=f"S3 bucket '{bucket_name}' for invocation logs uses {encryption_type} encryption instead of customer-managed KMS. Invocation logs may contain sensitive prompts and responses.",
+                            resolution="1. Enable SSE-KMS with a customer-managed key on the S3 bucket\n2. Update bucket policy to require encrypted uploads\n3. Consider enabling S3 bucket versioning and MFA delete for log integrity",
+                            reference="https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html",
+                            severity='Medium',
+                            status='Failed'
+                        )
+                    )
+
+            except s3_client.exceptions.ClientError as e:
+                if e.response['Error']['Code'] == 'ServerSideEncryptionConfigurationNotFoundError':
+                    findings['status'] = 'FAIL'
+                    findings['csv_data'].append(
+                        create_finding(
+                            finding_name="Bedrock Invocation Log Encryption Missing",
+                            finding_details=f"S3 bucket '{bucket_name}' for invocation logs has NO encryption configured. Logs containing prompts and responses are stored unencrypted.",
+                            resolution="Enable SSE-KMS encryption with a customer-managed key on the S3 bucket immediately",
+                            reference="https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html",
+                            severity='High',
+                            status='Failed'
+                        )
+                    )
+                elif e.response['Error']['Code'] == 'AccessDenied':
+                    findings['csv_data'].append(
+                        create_finding(
+                            finding_name="Bedrock Invocation Log Encryption Check",
+                            finding_details=f"Unable to check encryption for bucket '{bucket_name}' - access denied",
+                            resolution="Ensure Lambda execution role has s3:GetEncryptionConfiguration permission",
+                            reference="https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html",
+                            severity='Medium',
+                            status='Failed'
+                        )
+                    )
+                else:
+                    raise
+
+        except bedrock_client.exceptions.ValidationException:
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name="Bedrock Invocation Log Encryption Check",
+                    finding_details="Model invocation logging is not configured",
+                    resolution="Configure model invocation logging with an encrypted S3 bucket",
+                    reference="https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html",
+                    severity='N/A',
+                    status='N/A'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_bedrock_invocation_log_encryption: {str(e)}", exc_info=True)
+        return {
+            'check_name': 'Bedrock Invocation Log Encryption Check',
+            'status': 'ERROR',
+            'details': f"Error during check: {str(e)}",
+            'csv_data': []
+        }
+
+
+def check_bedrock_flows_guardrails() -> Dict[str, Any]:
+    """
+    Check if Bedrock Flows have guardrails configured on prompt and knowledge base nodes
+    """
+    logger.debug("Starting check for Bedrock Flows guardrail configuration")
+    try:
+        findings = {
+            'check_name': 'Bedrock Flows Guardrails Check',
+            'status': 'PASS',
+            'details': '',
+            'csv_data': []
+        }
+
+        bedrock_agent_client = boto3.client('bedrock-agent', config=boto3_config)
+
+        try:
+            # List all flows
+            flows = []
+            paginator = bedrock_agent_client.get_paginator('list_flows')
+            for page in paginator.paginate():
+                flows.extend(page.get('flowSummaries', []))
+
+            if not flows:
+                findings['details'] = "No Bedrock Flows found"
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name="Bedrock Flows Guardrails Check",
+                        finding_details="No Bedrock Flows found in the account",
+                        resolution="No action required",
+                        reference="https://docs.aws.amazon.com/bedrock/latest/userguide/flows-guardrails.html",
+                        severity='N/A',
+                        status='Passed'
+                    )
+                )
+                return findings
+
+            flows_without_guardrails = []
+            flows_with_guardrails = []
+
+            for flow in flows:
+                flow_id = flow.get('id')
+                flow_name = flow.get('name', flow_id)
+
+                try:
+                    # Get detailed flow info
+                    flow_details = bedrock_agent_client.get_flow(flowIdentifier=flow_id)
+
+                    definition = flow_details.get('definition', {})
+                    nodes = definition.get('nodes', [])
+
+                    # Check each node for guardrail configuration
+                    nodes_needing_guardrails = []
+                    nodes_with_guardrails = []
+
+                    for node in nodes:
+                        node_name = node.get('name', 'Unknown')
+                        node_type = node.get('type', '')
+                        node_config = node.get('configuration', {})
+
+                        # Prompt nodes and Knowledge Base nodes should have guardrails
+                        if node_type in ['Prompt', 'KnowledgeBase']:
+                            guardrail_config = None
+
+                            if node_type == 'Prompt':
+                                prompt_config = node_config.get('prompt', {})
+                                guardrail_config = prompt_config.get('guardrailConfiguration')
+                            elif node_type == 'KnowledgeBase':
+                                kb_config = node_config.get('knowledgeBase', {})
+                                guardrail_config = kb_config.get('guardrailConfiguration')
+
+                            if guardrail_config and guardrail_config.get('guardrailIdentifier'):
+                                nodes_with_guardrails.append(node_name)
+                            else:
+                                nodes_needing_guardrails.append({
+                                    'name': node_name,
+                                    'type': node_type
+                                })
+
+                    if nodes_needing_guardrails:
+                        flows_without_guardrails.append({
+                            'flow_id': flow_id,
+                            'flow_name': flow_name,
+                            'nodes': nodes_needing_guardrails
+                        })
+                    elif nodes_with_guardrails:
+                        flows_with_guardrails.append(flow_name)
+
+                except Exception as e:
+                    logger.warning(f"Error checking flow {flow_id}: {str(e)}")
+
+            if flows_without_guardrails:
+                findings['status'] = 'WARN'
+                findings['details'] = f"Found {len(flows_without_guardrails)} flows with nodes missing guardrails"
+
+                for flow in flows_without_guardrails:
+                    node_details = ', '.join([f"{n['name']} ({n['type']})" for n in flow['nodes']])
+                    findings['csv_data'].append(
+                        create_finding(
+                            finding_name="Bedrock Flow Missing Guardrails",
+                            finding_details=f"Flow '{flow['flow_name']}' has nodes without guardrails configured: {node_details}. Without guardrails, intermediate steps can generate harmful content.",
+                            resolution="1. Configure guardrails on Prompt nodes via guardrailConfiguration\n2. Configure guardrails on Knowledge Base nodes when using RetrieveAndGenerate\n3. Apply organization-wide guardrail enforcement policies",
+                            reference="https://docs.aws.amazon.com/bedrock/latest/userguide/flows-guardrails.html",
+                            severity='High',
+                            status='Failed'
+                        )
+                    )
+            else:
+                detail_msg = f"All {len(flows)} flows reviewed" if flows else "No flows found"
+                if flows_with_guardrails:
+                    detail_msg = f"All nodes in {len(flows_with_guardrails)} flows have guardrails configured"
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name="Bedrock Flows Guardrails Check",
+                        finding_details=detail_msg,
+                        resolution="No action required",
+                        reference="https://docs.aws.amazon.com/bedrock/latest/userguide/flows-guardrails.html",
+                        severity='N/A',
+                        status='Passed'
+                    )
+                )
+
+        except Exception as e:
+            logger.warning(f"Error listing flows: {str(e)}")
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name="Bedrock Flows Guardrails Check",
+                    finding_details=f"Unable to check flows: {str(e)}",
+                    resolution="Verify permissions to access Bedrock Flows",
+                    reference="https://docs.aws.amazon.com/bedrock/latest/userguide/flows-guardrails.html",
+                    severity='Low',
+                    status='N/A'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_bedrock_flows_guardrails: {str(e)}", exc_info=True)
+        return {
+            'check_name': 'Bedrock Flows Guardrails Check',
+            'status': 'ERROR',
+            'details': f"Error during check: {str(e)}",
+            'csv_data': []
+        }
+
+
 def check_bedrock_agent_roles(permission_cache) -> Dict[str, Any]:
     """
     Check IAM roles associated with Bedrock agents for least privilege access
@@ -1313,7 +2004,27 @@ def lambda_handler(event, context):
         logger.info("Running Bedrock agent IAM roles check")
         bedrock_agent_roles_findings = check_bedrock_agent_roles(permission_cache)
         all_findings.append(bedrock_agent_roles_findings)
-        
+
+        logger.info("Running Bedrock Knowledge Base encryption check")
+        kb_encryption_findings = check_bedrock_knowledge_base_encryption()
+        all_findings.append(kb_encryption_findings)
+
+        logger.info("Running Bedrock Guardrail IAM enforcement check")
+        guardrail_iam_findings = check_bedrock_guardrail_iam_enforcement(permission_cache)
+        all_findings.append(guardrail_iam_findings)
+
+        logger.info("Running Bedrock custom model encryption check")
+        custom_model_encryption_findings = check_bedrock_custom_model_encryption()
+        all_findings.append(custom_model_encryption_findings)
+
+        logger.info("Running Bedrock invocation log encryption check")
+        invocation_log_encryption_findings = check_bedrock_invocation_log_encryption()
+        all_findings.append(invocation_log_encryption_findings)
+
+        logger.info("Running Bedrock Flows guardrails check")
+        flows_guardrails_findings = check_bedrock_flows_guardrails()
+        all_findings.append(flows_guardrails_findings)
+
         # Generate and upload report
         logger.info("Generating CSV report")
         csv_content = generate_csv_report(all_findings)

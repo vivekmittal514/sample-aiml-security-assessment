@@ -1018,6 +1018,698 @@ def check_sagemaker_model_monitor_usage(permission_cache) -> Dict[str, Any]:
             'csv_data': []
         }
 
+def check_sagemaker_notebook_root_access() -> Dict[str, Any]:
+    """
+    Check if SageMaker notebook instances have root access disabled.
+    Root access enables privilege escalation and should be disabled for security.
+    Aligns with AWS Security Hub control SageMaker.3
+    """
+    logger.debug("Starting check for SageMaker notebook root access")
+    try:
+        findings = {
+            'csv_data': []
+        }
+
+        sagemaker_client = boto3.client('sagemaker', config=boto3_config)
+
+        notebooks_with_root = []
+        notebooks_without_root = []
+
+        try:
+            paginator = sagemaker_client.get_paginator('list_notebook_instances')
+            for page in paginator.paginate():
+                for instance in page.get('NotebookInstances', []):
+                    instance_name = instance.get('NotebookInstanceName')
+                    if instance_name:
+                        instance_details = sagemaker_client.describe_notebook_instance(
+                            NotebookInstanceName=instance_name
+                        )
+
+                        root_access = instance_details.get('RootAccess', 'Enabled')
+
+                        if root_access == 'Enabled':
+                            notebooks_with_root.append({
+                                'name': instance_name,
+                                'status': instance_details.get('NotebookInstanceStatus', 'Unknown')
+                            })
+                        else:
+                            notebooks_without_root.append(instance_name)
+
+        except Exception as e:
+            logger.error(f"Error checking notebook instances: {str(e)}")
+
+        if notebooks_with_root:
+            for notebook in notebooks_with_root:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Notebook Root Access Enabled',
+                        finding_details=f"Notebook instance '{notebook['name']}' has root access enabled. Root access allows users to install arbitrary software, modify system configurations, and potentially escalate privileges.",
+                        resolution="Disable root access by updating the notebook instance with RootAccess=Disabled. Note: Lifecycle configurations will still run with root access.",
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/nbi-root-access.html",
+                        severity='High',
+                        status='Failed'
+                    )
+                )
+        else:
+            detail_msg = f"All {len(notebooks_without_root)} notebook instances have root access disabled" if notebooks_without_root else "No notebook instances found"
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name='SageMaker Notebook Root Access Check',
+                    finding_details=detail_msg,
+                    resolution='',
+                    reference="https://docs.aws.amazon.com/sagemaker/latest/dg/nbi-root-access.html",
+                    severity='N/A',
+                    status='Passed'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_sagemaker_notebook_root_access: {str(e)}", exc_info=True)
+        return {
+            'csv_data': []
+        }
+
+
+def check_sagemaker_notebook_vpc_deployment() -> Dict[str, Any]:
+    """
+    Check if SageMaker notebook instances are deployed within a custom VPC.
+    Notebooks outside VPC use shared infrastructure with less isolation.
+    Aligns with AWS Security Hub control SageMaker.2
+    """
+    logger.debug("Starting check for SageMaker notebook VPC deployment")
+    try:
+        findings = {
+            'csv_data': []
+        }
+
+        sagemaker_client = boto3.client('sagemaker', config=boto3_config)
+
+        notebooks_without_vpc = []
+        notebooks_with_vpc = []
+
+        try:
+            paginator = sagemaker_client.get_paginator('list_notebook_instances')
+            for page in paginator.paginate():
+                for instance in page.get('NotebookInstances', []):
+                    instance_name = instance.get('NotebookInstanceName')
+                    if instance_name:
+                        instance_details = sagemaker_client.describe_notebook_instance(
+                            NotebookInstanceName=instance_name
+                        )
+
+                        subnet_id = instance_details.get('SubnetId')
+
+                        if not subnet_id:
+                            notebooks_without_vpc.append({
+                                'name': instance_name,
+                                'status': instance_details.get('NotebookInstanceStatus', 'Unknown')
+                            })
+                        else:
+                            notebooks_with_vpc.append({
+                                'name': instance_name,
+                                'subnet_id': subnet_id,
+                                'vpc_id': instance_details.get('VpcId', 'N/A')
+                            })
+
+        except Exception as e:
+            logger.error(f"Error checking notebook instances VPC: {str(e)}")
+
+        if notebooks_without_vpc:
+            for notebook in notebooks_without_vpc:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Notebook Not in VPC',
+                        finding_details=f"Notebook instance '{notebook['name']}' is not deployed in a custom VPC. This uses SageMaker's service VPC with reduced network isolation.",
+                        resolution="Create the notebook instance within a custom VPC by specifying SubnetId and SecurityGroupIds. This provides network isolation and allows use of VPC endpoints.",
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/appendix-notebook-and-internet-access.html",
+                        severity='High',
+                        status='Failed'
+                    )
+                )
+        else:
+            detail_msg = f"All {len(notebooks_with_vpc)} notebook instances are deployed in custom VPCs" if notebooks_with_vpc else "No notebook instances found"
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name='SageMaker Notebook VPC Deployment Check',
+                    finding_details=detail_msg,
+                    resolution='',
+                    reference="https://docs.aws.amazon.com/sagemaker/latest/dg/appendix-notebook-and-internet-access.html",
+                    severity='N/A',
+                    status='Passed'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_sagemaker_notebook_vpc_deployment: {str(e)}", exc_info=True)
+        return {
+            'csv_data': []
+        }
+
+
+def check_sagemaker_model_network_isolation() -> Dict[str, Any]:
+    """
+    Check if SageMaker hosted models have network isolation enabled.
+    Without isolation, model containers can make outbound calls and exfiltrate data.
+    Aligns with AWS Security Hub control SageMaker.5
+    """
+    logger.debug("Starting check for SageMaker model network isolation")
+    try:
+        findings = {
+            'csv_data': []
+        }
+
+        sagemaker_client = boto3.client('sagemaker', config=boto3_config)
+
+        models_without_isolation = []
+        models_with_isolation = []
+
+        try:
+            paginator = sagemaker_client.get_paginator('list_models')
+            for page in paginator.paginate():
+                for model in page.get('Models', []):
+                    model_name = model.get('ModelName')
+                    if model_name:
+                        try:
+                            model_details = sagemaker_client.describe_model(
+                                ModelName=model_name
+                            )
+
+                            enable_network_isolation = model_details.get('EnableNetworkIsolation', False)
+
+                            if not enable_network_isolation:
+                                models_without_isolation.append({
+                                    'name': model_name,
+                                    'creation_time': str(model_details.get('CreationTime', 'Unknown'))
+                                })
+                            else:
+                                models_with_isolation.append(model_name)
+
+                        except Exception as e:
+                            logger.warning(f"Error describing model {model_name}: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Error listing models: {str(e)}")
+
+        if models_without_isolation:
+            # Limit findings to avoid overwhelming output
+            for model in models_without_isolation[:20]:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Model Network Isolation Disabled',
+                        finding_details=f"Model '{model['name']}' does not have network isolation enabled. Model containers can make outbound network calls, potentially exfiltrating data.",
+                        resolution="Enable network isolation by setting EnableNetworkIsolation=True when creating models. This prevents containers from making outbound network calls.",
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/mkt-algo-model-internet-free.html",
+                        severity='High',
+                        status='Failed'
+                    )
+                )
+
+            if len(models_without_isolation) > 20:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Model Network Isolation Summary',
+                        finding_details=f"Found {len(models_without_isolation)} total models without network isolation (showing first 20)",
+                        resolution="Review all models and enable network isolation where appropriate",
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/mkt-algo-model-internet-free.html",
+                        severity='High',
+                        status='Failed'
+                    )
+                )
+        else:
+            detail_msg = f"All {len(models_with_isolation)} models have network isolation enabled" if models_with_isolation else "No models found"
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name='SageMaker Model Network Isolation Check',
+                    finding_details=detail_msg,
+                    resolution='',
+                    reference="https://docs.aws.amazon.com/sagemaker/latest/dg/mkt-algo-model-internet-free.html",
+                    severity='N/A',
+                    status='Passed'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_sagemaker_model_network_isolation: {str(e)}", exc_info=True)
+        return {
+            'csv_data': []
+        }
+
+
+def check_sagemaker_endpoint_instance_count() -> Dict[str, Any]:
+    """
+    Check if SageMaker endpoints have more than one instance for availability.
+    Single instance creates availability risk and single point of compromise.
+    Aligns with AWS Security Hub control SageMaker.4
+    """
+    logger.debug("Starting check for SageMaker endpoint instance count")
+    try:
+        findings = {
+            'csv_data': []
+        }
+
+        sagemaker_client = boto3.client('sagemaker', config=boto3_config)
+
+        endpoints_single_instance = []
+        endpoints_multi_instance = []
+
+        try:
+            paginator = sagemaker_client.get_paginator('list_endpoints')
+            for page in paginator.paginate():
+                for endpoint in page.get('Endpoints', []):
+                    endpoint_name = endpoint.get('EndpointName')
+                    endpoint_status = endpoint.get('EndpointStatus')
+
+                    if endpoint_name and endpoint_status == 'InService':
+                        try:
+                            endpoint_details = sagemaker_client.describe_endpoint(
+                                EndpointName=endpoint_name
+                            )
+
+                            production_variants = endpoint_details.get('ProductionVariants', [])
+
+                            for variant in production_variants:
+                                current_instance_count = variant.get('CurrentInstanceCount', 0)
+                                variant_name = variant.get('VariantName', 'Unknown')
+
+                                if current_instance_count <= 1:
+                                    endpoints_single_instance.append({
+                                        'endpoint_name': endpoint_name,
+                                        'variant_name': variant_name,
+                                        'instance_count': current_instance_count
+                                    })
+                                else:
+                                    endpoints_multi_instance.append({
+                                        'endpoint_name': endpoint_name,
+                                        'variant_name': variant_name,
+                                        'instance_count': current_instance_count
+                                    })
+
+                        except Exception as e:
+                            logger.warning(f"Error describing endpoint {endpoint_name}: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Error listing endpoints: {str(e)}")
+
+        if endpoints_single_instance:
+            for endpoint in endpoints_single_instance:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Endpoint Single Instance',
+                        finding_details=f"Endpoint '{endpoint['endpoint_name']}' variant '{endpoint['variant_name']}' has only {endpoint['instance_count']} instance(s). Single instance creates availability risk and no failover capability.",
+                        resolution="Configure production endpoints with at least 2 instances across multiple Availability Zones for high availability and fault tolerance.",
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/endpoint-scaling.html",
+                        severity='Medium',
+                        status='Failed'
+                    )
+                )
+        else:
+            detail_msg = f"All {len(endpoints_multi_instance)} endpoint variants have multiple instances" if endpoints_multi_instance else "No InService endpoints found"
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name='SageMaker Endpoint Instance Count Check',
+                    finding_details=detail_msg,
+                    resolution='',
+                    reference="https://docs.aws.amazon.com/sagemaker/latest/dg/endpoint-scaling.html",
+                    severity='N/A',
+                    status='Passed'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_sagemaker_endpoint_instance_count: {str(e)}", exc_info=True)
+        return {
+            'csv_data': []
+        }
+
+
+def check_sagemaker_monitoring_network_isolation() -> Dict[str, Any]:
+    """
+    Check if SageMaker monitoring schedules have network isolation enabled.
+    Aligns with AWS Security Hub control SageMaker.14
+    """
+    logger.debug("Starting check for SageMaker monitoring schedule network isolation")
+    try:
+        findings = {
+            'csv_data': []
+        }
+
+        sagemaker_client = boto3.client('sagemaker', config=boto3_config)
+
+        schedules_without_isolation = []
+        schedules_with_isolation = []
+
+        try:
+            paginator = sagemaker_client.get_paginator('list_monitoring_schedules')
+            for page in paginator.paginate():
+                for schedule in page.get('MonitoringScheduleSummaries', []):
+                    schedule_name = schedule.get('MonitoringScheduleName')
+                    if schedule_name:
+                        try:
+                            schedule_details = sagemaker_client.describe_monitoring_schedule(
+                                MonitoringScheduleName=schedule_name
+                            )
+
+                            job_definition = schedule_details.get('MonitoringScheduleConfig', {}).get('MonitoringJobDefinition', {})
+                            network_config = job_definition.get('NetworkConfig', {})
+                            enable_network_isolation = network_config.get('EnableNetworkIsolation', False)
+
+                            if not enable_network_isolation:
+                                schedules_without_isolation.append({
+                                    'name': schedule_name,
+                                    'status': schedule_details.get('MonitoringScheduleStatus', 'Unknown')
+                                })
+                            else:
+                                schedules_with_isolation.append(schedule_name)
+
+                        except Exception as e:
+                            logger.warning(f"Error describing monitoring schedule {schedule_name}: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Error listing monitoring schedules: {str(e)}")
+
+        if schedules_without_isolation:
+            for schedule in schedules_without_isolation:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Monitoring Network Isolation Disabled',
+                        finding_details=f"Monitoring schedule '{schedule['name']}' does not have network isolation enabled. Monitoring jobs can make outbound network calls.",
+                        resolution="Enable network isolation in the monitoring job definition NetworkConfig to prevent outbound network access.",
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-network-isolation.html",
+                        severity='Medium',
+                        status='Failed'
+                    )
+                )
+        else:
+            detail_msg = f"All {len(schedules_with_isolation)} monitoring schedules have network isolation enabled" if schedules_with_isolation else "No monitoring schedules found"
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name='SageMaker Monitoring Network Isolation Check',
+                    finding_details=detail_msg,
+                    resolution='',
+                    reference="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-network-isolation.html",
+                    severity='N/A',
+                    status='Passed'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_sagemaker_monitoring_network_isolation: {str(e)}", exc_info=True)
+        return {
+            'csv_data': []
+        }
+
+
+def check_sagemaker_model_container_repository() -> Dict[str, Any]:
+    """
+    Check if SageMaker models pull container images from private ECR in VPC.
+    Using Platform mode exposes supply chain risks.
+    Aligns with AWS Security Hub control SageMaker.16
+    """
+    logger.debug("Starting check for SageMaker model container repository access")
+    try:
+        findings = {
+            'csv_data': []
+        }
+
+        sagemaker_client = boto3.client('sagemaker', config=boto3_config)
+
+        models_platform_mode = []
+        models_vpc_mode = []
+
+        try:
+            paginator = sagemaker_client.get_paginator('list_models')
+            for page in paginator.paginate():
+                for model in page.get('Models', []):
+                    model_name = model.get('ModelName')
+                    if model_name:
+                        try:
+                            model_details = sagemaker_client.describe_model(
+                                ModelName=model_name
+                            )
+
+                            # Check primary container
+                            primary_container = model_details.get('PrimaryContainer', {})
+                            image_config = primary_container.get('ImageConfig', {})
+                            repository_access_mode = image_config.get('RepositoryAccessMode', 'Platform')
+
+                            if repository_access_mode == 'Platform':
+                                models_platform_mode.append({
+                                    'name': model_name,
+                                    'image': primary_container.get('Image', 'Unknown')[:50]
+                                })
+                            else:
+                                models_vpc_mode.append(model_name)
+
+                            # Check additional containers
+                            for container in model_details.get('Containers', []):
+                                container_image_config = container.get('ImageConfig', {})
+                                container_access_mode = container_image_config.get('RepositoryAccessMode', 'Platform')
+
+                                if container_access_mode == 'Platform':
+                                    container_name = container.get('ContainerHostname', 'Unknown')
+                                    if {'name': model_name, 'container': container_name} not in models_platform_mode:
+                                        models_platform_mode.append({
+                                            'name': model_name,
+                                            'container': container_name
+                                        })
+
+                        except Exception as e:
+                            logger.warning(f"Error describing model {model_name}: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Error listing models: {str(e)}")
+
+        if models_platform_mode:
+            # Limit findings
+            for model in models_platform_mode[:15]:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Model Platform Repository Access',
+                        finding_details=f"Model '{model['name']}' uses Platform repository access mode. Container images are pulled from public/external registries, exposing supply chain risks.",
+                        resolution="Configure RepositoryAccessMode=Vpc in ImageConfig to pull images from private ECR repositories through VPC. This provides supply chain security.",
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/model-container-repositories.html",
+                        severity='Medium',
+                        status='Failed'
+                    )
+                )
+
+            if len(models_platform_mode) > 15:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Model Repository Access Summary',
+                        finding_details=f"Found {len(models_platform_mode)} total models using Platform repository access (showing first 15)",
+                        resolution="Review all models and configure VPC repository access where appropriate",
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/model-container-repositories.html",
+                        severity='Medium',
+                        status='Failed'
+                    )
+                )
+        else:
+            detail_msg = f"All {len(models_vpc_mode)} models use VPC repository access" if models_vpc_mode else "No models found or all use default Platform access"
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name='SageMaker Model Repository Access Check',
+                    finding_details=detail_msg,
+                    resolution='',
+                    reference="https://docs.aws.amazon.com/sagemaker/latest/dg/model-container-repositories.html",
+                    severity='N/A',
+                    status='Passed'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_sagemaker_model_container_repository: {str(e)}", exc_info=True)
+        return {
+            'csv_data': []
+        }
+
+
+def check_sagemaker_feature_store_encryption() -> Dict[str, Any]:
+    """
+    Check if SageMaker Feature Store offline stores have KMS encryption.
+    Aligns with AWS Security Hub control SageMaker.17
+    """
+    logger.debug("Starting check for SageMaker Feature Store offline encryption")
+    try:
+        findings = {
+            'csv_data': []
+        }
+
+        sagemaker_client = boto3.client('sagemaker', config=boto3_config)
+
+        feature_groups_without_encryption = []
+        feature_groups_with_encryption = []
+
+        try:
+            paginator = sagemaker_client.get_paginator('list_feature_groups')
+            for page in paginator.paginate():
+                for group in page.get('FeatureGroupSummaries', []):
+                    group_name = group.get('FeatureGroupName')
+                    if group_name:
+                        try:
+                            group_details = sagemaker_client.describe_feature_group(
+                                FeatureGroupName=group_name
+                            )
+
+                            offline_config = group_details.get('OfflineStoreConfig', {})
+
+                            if offline_config:
+                                s3_storage_config = offline_config.get('S3StorageConfig', {})
+                                kms_key_id = s3_storage_config.get('KmsKeyId')
+
+                                if not kms_key_id:
+                                    feature_groups_without_encryption.append({
+                                        'name': group_name,
+                                        's3_uri': s3_storage_config.get('S3Uri', 'Unknown')
+                                    })
+                                else:
+                                    feature_groups_with_encryption.append({
+                                        'name': group_name,
+                                        'kms_key': kms_key_id
+                                    })
+
+                        except Exception as e:
+                            logger.warning(f"Error describing feature group {group_name}: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Error listing feature groups: {str(e)}")
+
+        if feature_groups_without_encryption:
+            for group in feature_groups_without_encryption:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Feature Store Offline Encryption Missing',
+                        finding_details=f"Feature group '{group['name']}' offline store does not have KMS encryption configured. Feature data in S3 may not be encrypted with customer-managed keys.",
+                        resolution="Configure KmsKeyId in OfflineStoreConfig.S3StorageConfig when creating feature groups to encrypt offline store data with customer-managed KMS keys.",
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/feature-store-security.html",
+                        severity='Medium',
+                        status='Failed'
+                    )
+                )
+        else:
+            if feature_groups_with_encryption:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Feature Store Encryption Check',
+                        finding_details=f"All {len(feature_groups_with_encryption)} feature groups with offline stores have KMS encryption configured",
+                        resolution='',
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/feature-store-security.html",
+                        severity='N/A',
+                        status='Passed'
+                    )
+                )
+            else:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Feature Store Encryption Check',
+                        finding_details="No feature groups with offline stores found",
+                        resolution='',
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/feature-store-security.html",
+                        severity='N/A',
+                        status='Passed'
+                    )
+                )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_sagemaker_feature_store_encryption: {str(e)}", exc_info=True)
+        return {
+            'csv_data': []
+        }
+
+
+def check_sagemaker_data_quality_encryption() -> Dict[str, Any]:
+    """
+    Check if SageMaker data quality job definitions have inter-container traffic encryption.
+    Aligns with AWS Security Hub control SageMaker.9
+    """
+    logger.debug("Starting check for SageMaker data quality job encryption")
+    try:
+        findings = {
+            'csv_data': []
+        }
+
+        sagemaker_client = boto3.client('sagemaker', config=boto3_config)
+
+        jobs_without_encryption = []
+        jobs_with_encryption = []
+
+        try:
+            paginator = sagemaker_client.get_paginator('list_data_quality_job_definitions')
+            for page in paginator.paginate():
+                for job in page.get('JobDefinitionSummaries', []):
+                    job_name = job.get('MonitoringJobDefinitionName')
+                    job_arn = job.get('MonitoringJobDefinitionArn')
+
+                    if job_name:
+                        try:
+                            job_details = sagemaker_client.describe_data_quality_job_definition(
+                                JobDefinitionName=job_name
+                            )
+
+                            network_config = job_details.get('NetworkConfig', {})
+                            enable_inter_container_encryption = network_config.get('EnableInterContainerTrafficEncryption', False)
+
+                            if not enable_inter_container_encryption:
+                                jobs_without_encryption.append({
+                                    'name': job_name
+                                })
+                            else:
+                                jobs_with_encryption.append(job_name)
+
+                        except Exception as e:
+                            logger.warning(f"Error describing data quality job {job_name}: {str(e)}")
+
+        except Exception as e:
+            logger.error(f"Error listing data quality jobs: {str(e)}")
+
+        if jobs_without_encryption:
+            for job in jobs_without_encryption:
+                findings['csv_data'].append(
+                    create_finding(
+                        finding_name='SageMaker Data Quality Job Encryption Disabled',
+                        finding_details=f"Data quality job definition '{job['name']}' does not have inter-container traffic encryption enabled. Data transmitted between containers is not encrypted.",
+                        resolution="Enable EnableInterContainerTrafficEncryption in NetworkConfig when creating data quality job definitions.",
+                        reference="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-data-quality.html",
+                        severity='Medium',
+                        status='Failed'
+                    )
+                )
+        else:
+            detail_msg = f"All {len(jobs_with_encryption)} data quality job definitions have inter-container encryption enabled" if jobs_with_encryption else "No data quality job definitions found"
+            findings['csv_data'].append(
+                create_finding(
+                    finding_name='SageMaker Data Quality Job Encryption Check',
+                    finding_details=detail_msg,
+                    resolution='',
+                    reference="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-data-quality.html",
+                    severity='N/A',
+                    status='Passed'
+                )
+            )
+
+        return findings
+
+    except Exception as e:
+        logger.error(f"Error in check_sagemaker_data_quality_encryption: {str(e)}", exc_info=True)
+        return {
+            'csv_data': []
+        }
+
+
 def check_model_registry_usage(permission_cache) -> Dict[str, Any]:
     """
     Check if Amazon Model Registry is being used effectively for model management
@@ -1277,6 +1969,38 @@ def lambda_handler(event, context):
         logger.info("Running Model Registry usage check")
         registry_findings = check_model_registry_usage(permission_cache)
         all_findings.append(registry_findings)
+
+        logger.info("Running SageMaker notebook root access check")
+        notebook_root_findings = check_sagemaker_notebook_root_access()
+        all_findings.append(notebook_root_findings)
+
+        logger.info("Running SageMaker notebook VPC deployment check")
+        notebook_vpc_findings = check_sagemaker_notebook_vpc_deployment()
+        all_findings.append(notebook_vpc_findings)
+
+        logger.info("Running SageMaker model network isolation check")
+        model_isolation_findings = check_sagemaker_model_network_isolation()
+        all_findings.append(model_isolation_findings)
+
+        logger.info("Running SageMaker endpoint instance count check")
+        endpoint_instance_findings = check_sagemaker_endpoint_instance_count()
+        all_findings.append(endpoint_instance_findings)
+
+        logger.info("Running SageMaker monitoring network isolation check")
+        monitoring_isolation_findings = check_sagemaker_monitoring_network_isolation()
+        all_findings.append(monitoring_isolation_findings)
+
+        logger.info("Running SageMaker model container repository check")
+        model_repository_findings = check_sagemaker_model_container_repository()
+        all_findings.append(model_repository_findings)
+
+        logger.info("Running SageMaker Feature Store encryption check")
+        feature_store_encryption_findings = check_sagemaker_feature_store_encryption()
+        all_findings.append(feature_store_encryption_findings)
+
+        logger.info("Running SageMaker data quality job encryption check")
+        data_quality_encryption_findings = check_sagemaker_data_quality_encryption()
+        all_findings.append(data_quality_encryption_findings)
 
         # Generate and upload report
         logger.info("Generating reports")

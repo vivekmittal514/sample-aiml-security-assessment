@@ -152,7 +152,22 @@ Resources:
                 - bedrock:GetPrompt
                 - bedrock:ListAgents
                 - bedrock:GetAgent
+                - bedrock:ListCustomModels
+                - bedrock:GetCustomModel
               Resource: '*'
+            - Sid: BedrockAgentPermissions
+              Effect: Allow
+              Action:
+                - bedrock-agent:ListKnowledgeBases
+                - bedrock-agent:GetKnowledgeBase
+                - bedrock-agent:ListFlows
+                - bedrock-agent:GetFlow
+              Resource: '*'
+            - Sid: S3BucketEncryptionPermissions
+              Effect: Allow
+              Action:
+                - s3:GetBucketEncryption
+              Resource: 'arn:aws:s3:::*'
             - Sid: CloudTrailPermissions
               Effect: Allow
               Action:
@@ -234,12 +249,19 @@ Resources:
                 - sagemaker:ListModelPackageGroups
                 - sagemaker:ListModelPackages
                 - sagemaker:ListFeatureGroups
+                - sagemaker:DescribeFeatureGroup
                 - sagemaker:ListPipelines
                 - sagemaker:ListPipelineExecutions
                 - sagemaker:ListProcessingJobs
                 - sagemaker:DescribeProcessingJob
                 - sagemaker:ListMonitoringSchedules
                 - sagemaker:DescribeMonitoringSchedule
+                - sagemaker:ListModels
+                - sagemaker:DescribeModel
+                - sagemaker:ListEndpoints
+                - sagemaker:DescribeEndpoint
+                - sagemaker:ListDataQualityJobDefinitions
+                - sagemaker:DescribeDataQualityJobDefinition
               Resource: '*'
         - Statement:
             - Sid: GuardDutyPermissions
@@ -305,6 +327,20 @@ Resources:
               Action:
                 - bedrock-agentcore:*
               Resource: '*'
+            - Sid: IAMRolePermissions
+              Effect: Allow
+              Action:
+                - iam:GetRole
+              Resource: 'arn:aws:iam::*:role/AWSServiceRoleForBedrockAgentCoreNetwork'
+            - Sid: S3BucketPermissions
+              Effect: Allow
+              Action:
+                - s3:ListBucket
+                - s3:GetBucketEncryption
+                - s3:GetBucketVersioning
+                - s3:GetBucketTagging
+                - s3:HeadBucket
+              Resource: 'arn:aws:s3:::*'
             - Sid: EC2Permissions
               Effect: Allow
               Action:
@@ -358,7 +394,7 @@ Resources:
             Effect: Deny
             Principal: '*'
             Action: s3:*
-            Resource: 
+            Resource:
               - !Sub '${AIMLAssessmentBucket.Arn}/*'
               - !GetAtt AIMLAssessmentBucket.Arn
             Condition:

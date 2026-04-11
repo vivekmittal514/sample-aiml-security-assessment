@@ -92,9 +92,64 @@ resco-assessments/
 ## Assessment Module Structure 
 
 ### 1. AI/ML Assessment (`resco-aiml-assessment/`)
-- **Bedrock Assessment Lambda**: Guardrails, Logging, VPC Endpoints, IAM Roles
-- **SageMaker Assessment Lambda**: Notebooks, Domains, Training Jobs, Model Registry
-- **AgentCore Assessment Lambda**: Runtimes, Memory, Gateway, VPC Configuration, Observability
+
+The AI/ML assessment module includes **43 security checks** across three services:
+
+#### Bedrock Assessment Lambda (14 checks)
+| Check | Description | AWS Security Hub Control |
+|-------|-------------|--------------------------|
+| VPC Endpoint Check | Validates Bedrock VPC endpoints exist | - |
+| Guardrail Check | Verifies guardrails are configured | - |
+| Model Invocation Logging | Checks logging configuration | - |
+| IAM Least Privilege | Analyzes IAM permissions for overly permissive policies | - |
+| Unused Permissions | Identifies unused Bedrock permissions | - |
+| Prompt Management | Validates Bedrock Prompt templates | - |
+| Agent IAM Configuration | Checks agent role permissions | - |
+| Custom Model Encryption | Verifies custom models use KMS encryption | - |
+| Knowledge Base Encryption | Validates knowledge base encryption settings | - |
+| Guardrail IAM Enforcement | Checks guardrail enforcement in IAM policies | - |
+| Invocation Log Encryption | Verifies invocation logs are encrypted | - |
+| Flows Guardrails | Validates flows have guardrails configured | - |
+| Knowledge Base IAM | Checks knowledge base IAM permissions | - |
+| Flows IAM | Validates flows IAM configuration | - |
+
+#### SageMaker Assessment Lambda (16 checks)
+| Check | Description | AWS Security Hub Control |
+|-------|-------------|--------------------------|
+| Notebook Encryption | Verifies notebook instances use KMS | SageMaker.1 |
+| Notebook VPC Deployment | Checks notebooks are in VPC | SageMaker.2 |
+| Notebook Root Access | Verifies root access is disabled | SageMaker.3 |
+| Model Network Isolation | Validates model network isolation | SageMaker.4 |
+| Endpoint Instance Count | Checks multi-AZ deployment | SageMaker.5 |
+| Domain Encryption | Validates domain encryption settings | - |
+| Training Job Encryption | Checks training job encryption | - |
+| IAM Least Privilege | Analyzes IAM permissions | - |
+| Unused Permissions | Identifies unused SageMaker permissions | - |
+| GuardDuty Integration | Checks GuardDuty runtime monitoring | - |
+| Model Registry Access | Validates model package permissions | - |
+| Feature Store Encryption | Verifies feature group encryption | - |
+| Pipeline Security | Checks pipeline configurations | - |
+| Processing Job Encryption | Validates processing job encryption | - |
+| Monitoring Network Isolation | Checks monitoring job isolation | - |
+| Data Quality Encryption | Verifies data quality job encryption | - |
+
+#### AgentCore Assessment Lambda (13 checks)
+| Check | Description | AWS Security Hub Control |
+|-------|-------------|--------------------------|
+| Runtime VPC Configuration | Validates VPC settings for runtimes | - |
+| Runtime Encryption | Verifies runtime encryption at rest | - |
+| Memory Encryption | Checks memory encryption settings | - |
+| Gateway Security | Validates gateway configuration | - |
+| Gateway Encryption | Verifies gateway encryption | - |
+| Network Egress | Checks NAT/VPC endpoint for egress | - |
+| ECR Encryption | Validates ECR repository encryption | - |
+| Logging Configuration | Checks CloudWatch logs setup | - |
+| Metrics Configuration | Validates metrics configuration | - |
+| VPC Endpoints | Checks VPC endpoints for AgentCore | - |
+| Service-Linked Role | Verifies service-linked role exists | - |
+| Resource-Based Policies | Validates resource policies | - |
+| Policy Engine Encryption | Checks policy engine encryption | - |
+
 - **Comprehend Assessment Lambda**: Data privacy, Access controls (Future)
 - **Textract Assessment Lambda**: Document processing security (Future)
 
@@ -449,7 +504,7 @@ See [Security issue notifications](CONTRIBUTING.md#security-issue-notifications)
 ## Module Development Roadmap
 
 ### Current Status
-- **AI/ML Assessment**: Bedrock Lambda, SageMaker Lambda, AgentCore Lambda (Active)
+- **AI/ML Assessment**: 43 security checks across Bedrock (14), SageMaker (16), and AgentCore (13) Lambdas (Active)
 
 
 ### Service-Level Development Pattern

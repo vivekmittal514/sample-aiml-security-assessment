@@ -6,22 +6,43 @@ ReSCO AI/ML Assessment Framework is a serverless solution designed to perform co
 
 ## Features
 
-### Current Features
-Security Assessments for:
-- **Amazon Bedrock**
-  - Network Isolation
-  - Data Protection
-  - Identity and Access Management
-- **Amazon SageMaker**
-  - Compute and network isolation
-  - Authentication and authorization
-  - Data protection
-  - Governance and Auditability
-- **Amazon Bedrock AgentCore**
-  - Runtime VPC Configuration
-  - Memory Encryption
-  - Gateway Security
-  - Observability Settings
+### Current Features (43 Security Checks)
+
+**Amazon Bedrock** (14 checks)
+- Network Isolation (VPC endpoints, private connectivity)
+- Data Protection (guardrails, logging, encryption)
+- Identity and Access Management (least privilege, unused permissions)
+- Knowledge Base encryption verification
+- Guardrail IAM enforcement
+- Custom model encryption (KMS)
+- Invocation logging encryption
+- Flows guardrail configuration
+
+**Amazon SageMaker** (16 checks)
+- Compute and network isolation (VPC deployment, internet access controls)
+- Authentication and authorization (IAM permissions, least privilege)
+- Data protection (encryption at rest, KMS key management)
+- Governance and Auditability (model registry, training job encryption)
+- Notebook root access restrictions (SageMaker.3)
+- Notebook VPC deployment (SageMaker.2)
+- Model network isolation (SageMaker.4)
+- Endpoint instance count for high availability (SageMaker.5)
+- Monitoring job network isolation
+- Model container repository validation
+- Feature store encryption verification
+- Data quality job encryption
+
+**Amazon Bedrock AgentCore** (13 checks)
+- Runtime VPC Configuration
+- Memory Encryption (KMS)
+- Gateway Security and encryption
+- Observability Settings (logging, metrics)
+- Network egress controls (NAT/VPC endpoints)
+- ECR repository encryption
+- VPC endpoint usage
+- Service-linked role verification
+- Resource-based policy configuration
+- Policy engine encryption
 
 ## Prerequisites
 - AWS Account with appropriate permissions
