@@ -28,3 +28,10 @@ venv/
 # Sample/mockup files (if any)
 samples/
 RR_IMPACT_ANALYSIS.md
+
+#Drawio files
+*.drawio
+
+#Temp files
+*.temp
+*.bkp

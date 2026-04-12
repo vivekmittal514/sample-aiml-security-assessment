@@ -74,17 +74,32 @@ resco-assessments/
 ```json
 {
   "Comment": "AI/ML Assessment Module",
-  "StartAt": "Parallel Service Assessments",
+  "StartAt": "Cleanup S3 Bucket",
   "States": {
+    "Cleanup S3 Bucket": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Next": "IAM Permission Caching"
+    },
+    "IAM Permission Caching": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Next": "Parallel Service Assessments"
+    },
     "Parallel Service Assessments": {
       "Type": "Parallel",
       "Branches": [
         {"StartAt": "Bedrock Assessment", "States": {...}},
         {"StartAt": "SageMaker Assessment", "States": {...}},
         {"StartAt": "AgentCore Assessment", "States": {...}}
-      ]
+      ],
+      "Next": "Generate Consolidated Report"
     },
-    "Generate Module Report": "..."
+    "Generate Consolidated Report": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "End": true
+    }
   }
 }
 ```

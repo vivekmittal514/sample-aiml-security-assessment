@@ -56,15 +56,16 @@ Please refer to the [main repository README.md](../README.md) for complete insta
 ## Project Structure
 ```
 resco-aiml-assessment/
-├── template.yaml                       # SAM template
+├── template.yaml                         # SAM template
 ├── functions/
 │   └── security/ 
-│       ├── bedrock/                    # Bedrock assessment functions
-│       ├── sagemaker/                  # SageMaker assessment functions
-│       ├── agentcore/                  # AgentCore assessment functions
-│       ├── iam_permission_caching/     # IAM permission cache function
+│       ├── bedrock_assessments/          # Bedrock assessment functions (14 checks)
+│       ├── sagemaker_assessments/        # SageMaker assessment functions (16 checks)
+│       ├── agentcore_assessments/        # AgentCore assessment functions (13 checks)
+│       ├── cleanup_bucket/               # S3 bucket cleanup function
+│       ├── iam_permission_caching/       # IAM permission cache function
 │       └── generate_consolidated_report/ # HTML report generation
-└── statemachine/                       # Contains the state machine definition
+└── statemachine/                         # Contains the state machine definition
 ```
 
 ## Step Functions Workflow
