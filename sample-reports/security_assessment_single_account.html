@@ -103,13 +103,14 @@
         .findings-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
         .findings-table thead { background: var(--bg-subtle); }
         .findings-table th { padding: 12px 10px; text-align: left; font-weight: 700; font-size: 11px; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 3px solid var(--border-strong); background: var(--bg-subtle); }
-        .findings-table th:nth-child(1) { width: 10%; } /* Account ID */
-        .findings-table th:nth-child(2) { width: 15%; } /* Finding */
-        .findings-table th:nth-child(3) { width: 20%; } /* Finding Details */
-        .findings-table th:nth-child(4) { width: 22%; } /* Resolution */
-        .findings-table th:nth-child(5) { width: 8%; } /* Reference */
-        .findings-table th:nth-child(6) { width: 10%; } /* Severity */
-        .findings-table th:nth-child(7) { width: 10%; } /* Status */
+        .findings-table th:nth-child(1) { width: 9%; } /* Account ID */
+        .findings-table th:nth-child(2) { width: 6%; } /* Check ID */
+        .findings-table th:nth-child(3) { width: 13%; } /* Finding */
+        .findings-table th:nth-child(4) { width: 21%; } /* Finding Details */
+        .findings-table th:nth-child(5) { width: 23%; } /* Resolution */
+        .findings-table th:nth-child(6) { width: 7%; } /* Reference */
+        .findings-table th:nth-child(7) { width: 10%; } /* Severity */
+        .findings-table th:nth-child(8) { width: 11%; } /* Status */
         .findings-table th .filter-input, .findings-table th .filter-select { display: block; width: 100%; margin-top: 8px; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; font-weight: normal; text-transform: none; letter-spacing: normal; background: var(--bg-card); color: var(--text-primary); }
         .findings-table th .filter-input:focus, .findings-table th .filter-select:focus { outline: none; border-color: var(--accent); }
         .findings-table th .filter-select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 28px; }
@@ -127,6 +128,7 @@
         .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
         .status-badge.passed { background: #ecfdf5; color: var(--status-passed); }
         .status-badge.failed { background: #fef2f2; color: var(--status-failed); }
+        .status-badge.na { background: #f3f4f6; color: var(--severity-na); }
         .status-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
         .reference-btn { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--accent-light); color: var(--accent); text-decoration: none; border-radius: 6px; font-size: 11px; font-weight: 600; border: 1px solid var(--border-color); transition: all 0.15s ease; margin: 2px 0; }
         .reference-btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
@@ -147,8 +149,8 @@
         <h1>AI/ML Security Assessment</h1>
         <div class="header-right">
             <div class="header-meta">
-                <div>Account: 111111111111</div>
-                <div>2026-04-11T16:28:16.011381</div>
+                <div>Account: 111122223333</div>
+                <div>2026-04-16T04:14:55.366603</div>
             </div>
             <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark mode">
                 <span class="theme-toggle-icon">
@@ -163,22 +165,22 @@
         <section class="exec-summary">
             <div class="exec-summary-header"><h2>Executive Summary</h2></div>
             <div class="metrics-grid">
-                <div class="metric-card total"><div class="metric-value">35</div><div class="metric-label">Total Findings</div></div>
-                <div class="metric-card high"><div class="metric-value">3</div><div class="metric-label">High Severity</div></div>
-                <div class="metric-card medium"><div class="metric-value">4</div><div class="metric-label">Medium Severity</div></div>
-                <div class="metric-card low"><div class="metric-value">1</div><div class="metric-label">Low Severity</div></div>
-                <div class="metric-card passed"><div class="metric-value">16</div><div class="metric-label">Passed Checks</div></div>
+                <div class="metric-card total"><div class="metric-value">52</div><div class="metric-label">Total Findings</div></div>
+                <div class="metric-card high"><div class="metric-value">2</div><div class="metric-label">High Severity</div></div>
+                <div class="metric-card medium"><div class="metric-value">5</div><div class="metric-label">Medium Severity</div></div>
+                <div class="metric-card low"><div class="metric-value">0</div><div class="metric-label">Low Severity</div></div>
+                <div class="metric-card passed"><div class="metric-value">6</div><div class="metric-label">Passed Checks</div></div>
             </div>
             <div class="breakdown-section">
                 <div class="breakdown-card">
                     <h3>Findings by Service</h3>
-                    <div class="service-row"><span class="service-name"><span class="service-icon">B</span>Amazon Bedrock</span><div class="service-stats"><span class="stat-badge failed">3 Failed</span><span class="stat-badge passed">4 Passed</span></div></div>
-                    <div class="service-row"><span class="service-name"><span class="service-icon">S</span>Amazon SageMaker</span><div class="service-stats"><span class="stat-badge failed">0 Failed</span><span class="stat-badge passed">12 Passed</span></div></div>
-                    <div class="service-row"><span class="service-name"><span class="service-icon">A</span>AgentCore</span><div class="service-stats"><span class="stat-badge failed">4 Failed</span><span class="stat-badge passed">0 Passed</span></div></div>
+                    <div class="service-row"><span class="service-name"><span class="service-icon">B</span>Amazon Bedrock</span><div class="service-stats"><span class="stat-badge failed">3 Failed</span><span class="stat-badge passed">0 Passed</span></div></div>
+                    <div class="service-row"><span class="service-name"><span class="service-icon">S</span>Amazon SageMaker</span><div class="service-stats"><span class="stat-badge failed">1 Failed</span><span class="stat-badge passed">6 Passed</span></div></div>
+                    <div class="service-row"><span class="service-name"><span class="service-icon">A</span>AgentCore</span><div class="service-stats"><span class="stat-badge failed">3 Failed</span><span class="stat-badge passed">0 Passed</span></div></div>
                 </div>
                 <div class="breakdown-card"><h3>Priority Recommendations</h3><ul class="recommendations-list"><li><span class="priority-indicator high"></span><span>Enable CloudTrail logging for Bedrock by :
 1. Configuring an advanced event selector for Bedrock events 
-2. Enabling management events logging in a multi-region trail</span></li><li><span class="priority-indicator high"></span><span>Scope permissions to specific AgentCore resources using resource ARNs</span></li><li><span class="priority-indicator high"></span><span>Create VPC interface endpoints for AgentCore services:
+2. Enabling management events logging in a multi-region trail</span></li><li><span class="priority-indicator high"></span><span>Create VPC interface endpoints for AgentCore services:
 1. com.amazonaws.region.bedrock-agentcore
 2. com.amazonaws.region.bedrock-agentcore-control
 3. com.amazonaws.region.bedrock-agentcore-runtime
@@ -194,34 +196,52 @@ This enables private connectivity via AWS PrivateLink</span></li><li><span class
             <div class="findings-table-container">
                 <table class="findings-table" id="findingsTable">
                     <thead><tr>
-                        <th>Account ID<select class="filter-select" data-column="0"><option value="">All Accounts</option><option value="111111111111">111111111111</option></select></th>
-                        <th>Finding<input type="text" class="filter-input" placeholder="Search findings..." data-column="1"></th>
+                        <th>Account ID<select class="filter-select" data-column="0"><option value="">All Accounts</option><option value="111122223333">111122223333</option></select></th>
+                        <th>Check ID<input type="text" class="filter-input" placeholder="Filter..." data-column="1"></th>
+                        <th>Finding<input type="text" class="filter-input" placeholder="Search findings..." data-column="2"></th>
                         <th class="no-filter">Finding Details</th>
                         <th class="no-filter">Resolution</th>
                         <th class="no-filter">Reference</th>
-                        <th>Severity<select class="filter-select" data-column="5"><option value="">All Severities</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="n/a">N/A</option></select></th>
-                        <th>Status<select class="filter-select" data-column="6"><option value="">All Statuses</option><option value="failed">Failed</option><option value="passed">Passed</option><option value="n/a">N/A</option></select></th>
+                        <th>Severity<select class="filter-select" data-column="6"><option value="">All Severities</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="n/a">N/A</option></select></th>
+                        <th>Status<select class="filter-select" data-column="7"><option value="">All Statuses</option><option value="failed">Failed</option><option value="passed">Passed</option><option value="n/a">N/A</option></select></th>
                     </tr></thead>
                     <tbody><tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-01</code></td>
                             <td>AmazonBedrockFullAccess role check</td>
                             <td class="finding-details">No roles found with AmazonBedrockFullAccess policy</td>
                             <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples-agent.html#iam-agents-ex-all" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples-agent.html#iam-agents-ex-all">View Docs</a><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples-br-studio.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples-br-studio.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-02</code></td>
+                            <td>Amazon Bedrock private connectivity not used</td>
+                            <td class="finding-details">No Bedrock service VPC endpoints found in VPCs: vpc-0example1a1a1a1a1, vpc-0example2b2b2b2b2, vpc-0example3c3c3c3c3, vpc-0example4</td>
+                            <td class="resolution-text">Create a VPC endpoint in your VPC with any of the following Bedrock service endpoints that your application may be using:
+- com.amazonaws.region.bedrock
+- com.amazonaws.region.bedrock-runtime
+- com.amazonaws.region.bedrock-agent
+- com.amazonaws.region.bedrock-agent-runtime</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/vpc-interface-endpoints.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/vpc-interface-endpoints.html">View Docs</a></td>
+                            <td><span class="severity-badge na">Informational</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-03</code></td>
                             <td>Marketplace Subscription Access Check</td>
                             <td class="finding-details">No identities found with overly permissive marketplace subscription access</td>
                             <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam-awsmanpol.html#security-iam-awsmanpol-bedrock-marketplace" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam-awsmanpol.html#security-iam-awsmanpol-bedrock-marketplace">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-04</code></td>
                             <td>Bedrock Model Invocation Logging Check</td>
                             <td class="finding-details">Model invocation logging is not enabled. This limits your ability to track and audit model usage.</td>
                             <td class="resolution-text">Enable model invocation logging to collect invocation logs, model input data, and model output data. Configure logging to deliver to Amazon S3, CloudWatch Logs, or both for comprehensive monitoring.</td>
@@ -230,7 +250,8 @@ This enables private connectivity via AWS PrivateLink</span></li><li><span class
                             <td><span class="status-badge failed">Failed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-05</code></td>
                             <td>Bedrock Guardrails Check</td>
                             <td class="finding-details">No Amazon Bedrock Guardrails are configured. This may expose your application to potential risks such as harmful content, sensitive information disclosure, or hallucinations.</td>
                             <td class="resolution-text">Configure Bedrock Guardrails to implement safeguards such as:
@@ -243,7 +264,8 @@ This enables private connectivity via AWS PrivateLink</span></li><li><span class
                             <td><span class="status-badge failed">Failed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-06</code></td>
                             <td>Bedrock CloudTrail Logging Check</td>
                             <td class="finding-details">CloudTrail is not configured to log Amazon Bedrock API calls. This limits your ability to audit and monitor Bedrock usage.</td>
                             <td class="resolution-text">Enable CloudTrail logging for Bedrock by :
@@ -254,178 +276,362 @@ This enables private connectivity via AWS PrivateLink</span></li><li><span class
                             <td><span class="status-badge failed">Failed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-07</code></td>
+                            <td>Bedrock Prompt Management Check</td>
+                            <td class="finding-details">Prompt Management feature is not being used. This may lead to inconsistent prompt handling and suboptimal model responses.</td>
+                            <td class="resolution-text">Implement Prompt Management to:
+1. Create and version your prompts
+2. Test different prompt variants
+3. Share prompts across your organization
+4. Maintain consistent prompt templates</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-management.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-management.html">View Docs</a></td>
+                            <td><span class="severity-badge na">Informational</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-08</code></td>
                             <td>Bedrock Agent IAM Roles Check</td>
                             <td class="finding-details">No Bedrock agents found in the account</td>
                             <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_service-with-iam.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_service-with-iam.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-10</code></td>
                             <td>Bedrock Guardrail IAM Enforcement Check</td>
                             <td class="finding-details">No guardrails configured - IAM enforcement check not applicable</td>
                             <td class="resolution-text">Configure Bedrock Guardrails first, then enforce their use via IAM policies</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-permissions-id.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails-permissions-id.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-11</code></td>
                             <td>Bedrock Custom Model Encryption Check</td>
                             <td class="finding-details">No custom/fine-tuned models found in the account</td>
                             <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/custom-models-security.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/custom-models-security.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-12</code></td>
                             <td>Bedrock Invocation Log Encryption Check</td>
                             <td class="finding-details">Model invocation logging to S3 is not configured</td>
                             <td class="resolution-text">If logging is enabled to CloudWatch only, ensure CloudWatch log group uses CMK encryption</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/model-invocation-logging.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">BR-13</code></td>
                             <td>Bedrock Flows Guardrails Check</td>
-                            <td class="finding-details">Unable to check flows: An error occurred (AccessDeniedException) when calling the ListFlows operation: User: arn:aws:sts::111111111111:assumed-role/aiml-sec-111111111111-BedrockSecurityAssessmentFunc-8fZ5sbUe4uD8/resco-aiml-aiml-sec-111111111111-BedrockAssessment is not authorized to perform: bedrock:ListFlows on resource: arn:aws:bedrock:us-east-1:111111111111:flow/* because no identity-based policy allows the bedrock:ListFlows action</td>
-                            <td class="resolution-text">Verify permissions to access Bedrock Flows</td>
+                            <td class="finding-details">No Bedrock Flows found in the account</td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/flows-guardrails.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/flows-guardrails.html">View Docs</a></td>
-                            <td><span class="severity-badge low">Low</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-01</code></td>
                             <td>SageMaker Internet Access Check</td>
                             <td class="finding-details">All SageMaker resources are properly configured to use VPC connectivity</td>
-                            <td class="resolution-text"></td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/infrastructure-security.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/infrastructure-security.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
                             <td><span class="status-badge passed">Passed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-02</code></td>
                             <td>SageMaker IAM Permissions Check</td>
                             <td class="finding-details">No issues found with IAM permissions, SSO is enabled, and no stale access detected</td>
-                            <td class="resolution-text"></td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker-unified-studio/latest/adminguide/security-iam.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker-unified-studio/latest/adminguide/security-iam.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
                             <td><span class="status-badge passed">Passed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-03</code></td>
                             <td>Data Protection Check</td>
                             <td class="finding-details">All resources use appropriate encryption configurations</td>
-                            <td class="resolution-text"></td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/security.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/security.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
                             <td><span class="status-badge passed">Passed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-04</code></td>
                             <td>GuardDuty Enabled</td>
                             <td class="finding-details">Amazon GuardDuty is properly enabled and monitoring for security threats in SageMaker workloads.</td>
-                            <td class="resolution-text"></td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/guardduty/latest/ug/ai-protection.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/guardduty/latest/ug/ai-protection.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
                             <td><span class="status-badge passed">Passed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
-                            <td>SageMaker Notebook Root Access Check</td>
-                            <td class="finding-details">No notebook instances found</td>
-                            <td class="resolution-text"></td>
-                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/nbi-root-access.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/nbi-root-access.html">View Docs</a></td>
-                            <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
-                        </tr>
-<tr>
-                            <td>111111111111</td>
-                            <td>SageMaker Notebook VPC Deployment Check</td>
-                            <td class="finding-details">No notebook instances found</td>
-                            <td class="resolution-text"></td>
-                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/appendix-notebook-and-internet-access.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/appendix-notebook-and-internet-access.html">View Docs</a></td>
-                            <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
-                        </tr>
-<tr>
-                            <td>111111111111</td>
-                            <td>SageMaker Model Network Isolation Check</td>
-                            <td class="finding-details">No models found</td>
-                            <td class="resolution-text"></td>
-                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/mkt-algo-model-internet-free.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/mkt-algo-model-internet-free.html">View Docs</a></td>
-                            <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
-                        </tr>
-<tr>
-                            <td>111111111111</td>
-                            <td>SageMaker Endpoint Instance Count Check</td>
-                            <td class="finding-details">No InService endpoints found</td>
-                            <td class="resolution-text"></td>
-                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/endpoint-scaling.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/endpoint-scaling.html">View Docs</a></td>
-                            <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
-                        </tr>
-<tr>
-                            <td>111111111111</td>
-                            <td>SageMaker Monitoring Network Isolation Check</td>
-                            <td class="finding-details">No monitoring schedules found</td>
-                            <td class="resolution-text"></td>
-                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-network-isolation.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-network-isolation.html">View Docs</a></td>
-                            <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
-                        </tr>
-<tr>
-                            <td>111111111111</td>
-                            <td>SageMaker Model Repository Access Check</td>
-                            <td class="finding-details">No models found or all use default Platform access</td>
-                            <td class="resolution-text"></td>
-                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-container-repositories.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-container-repositories.html">View Docs</a></td>
-                            <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
-                        </tr>
-<tr>
-                            <td>111111111111</td>
-                            <td>SageMaker Feature Store Encryption Check</td>
-                            <td class="finding-details">No feature groups with offline stores found</td>
-                            <td class="resolution-text"></td>
-                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/feature-store-security.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/feature-store-security.html">View Docs</a></td>
-                            <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
-                        </tr>
-<tr>
-                            <td>111111111111</td>
-                            <td>SageMaker Data Quality Job Encryption Check</td>
-                            <td class="finding-details">No data quality job definitions found</td>
-                            <td class="resolution-text"></td>
-                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-data-quality.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-data-quality.html">View Docs</a></td>
-                            <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge passed">Passed</span></td>
-                        </tr>
-<tr>
-                            <td>111111111111</td>
-                            <td>AgentCore VPC Configuration Check</td>
-                            <td class="finding-details">No AgentCore resources found or all resources have proper VPC configuration</td>
-                            <td class="resolution-text">N/A</td>
-                            <td class="reference-cell"><a href="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/security/agentcore-vpc.md" target="_blank" class="reference-btn" title="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/security/agentcore-vpc.md">View Docs</a></td>
-                            <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
-                        </tr>
-<tr>
-                            <td>111111111111</td>
-                            <td>AgentCore IAM Wildcard Permissions</td>
-                            <td class="finding-details">The following roles have wildcard AgentCore permissions on all resources: resco-aiml-security-00756-AgentCoreSecurityAssessme-kIT72FntzYo1</td>
-                            <td class="resolution-text">Scope permissions to specific AgentCore resources using resource ARNs</td>
-                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam-awsmanpol.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam-awsmanpol.html">View Docs</a></td>
-                            <td><span class="severity-badge high">High</span></td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-05</code></td>
+                            <td>SageMaker Model Registry Issue</td>
+                            <td class="finding-details">No model package groups found</td>
+                            <td class="resolution-text">Implement model versioning using SageMaker Model Registry to track model lineage, approve model versions, and manage model deployment</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/mlops.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/mlops.html">View Docs</a></td>
+                            <td><span class="severity-badge medium">Medium</span></td>
                             <td><span class="status-badge failed">Failed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-05</code></td>
+                            <td>SageMaker Feature Store Issue</td>
+                            <td class="finding-details">No feature groups found</td>
+                            <td class="resolution-text">Utilize SageMaker Feature Store to create, share, and manage features for machine learning development and production</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/mlops.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/mlops.html">View Docs</a></td>
+                            <td><span class="severity-badge na">Informational</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-05</code></td>
+                            <td>SageMaker Pipelines Issue</td>
+                            <td class="finding-details">No ML pipelines found</td>
+                            <td class="resolution-text">Implement SageMaker Pipelines to automate and manage ML workflows, including data preparation, training, and model deployment</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/mlops.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/mlops.html">View Docs</a></td>
+                            <td><span class="severity-badge na">Informational</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-06</code></td>
+                            <td>SageMaker Clarify No Clarify Usage</td>
+                            <td class="finding-details">No SageMaker Clarify jobs found</td>
+                            <td class="resolution-text">Implement SageMaker Clarify for model explainability and bias detection</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/clarify-configure-processing-jobs.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/clarify-configure-processing-jobs.html">View Docs</a></td>
+                            <td><span class="severity-badge na">Informational</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-07</code></td>
+                            <td>SageMaker Model Monitor No Model Monitoring</td>
+                            <td class="finding-details">No Model Monitor schedules found</td>
+                            <td class="resolution-text">Configure comprehensive model monitoring schedules</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor.html">View Docs</a></td>
+                            <td><span class="severity-badge na">Informational</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-08</code></td>
+                            <td>Model Registry Registry Not Used</td>
+                            <td class="finding-details">Model Registry is not being utilized</td>
+                            <td class="resolution-text">Implement proper model versioning and approval workflows</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-registry.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-registry.html">View Docs</a></td>
+                            <td><span class="severity-badge na">Informational</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-09</code></td>
+                            <td>SageMaker Notebook Root Access Check</td>
+                            <td class="finding-details">No notebook instances found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/nbi-root-access.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/nbi-root-access.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-10</code></td>
+                            <td>SageMaker Notebook VPC Deployment Check</td>
+                            <td class="finding-details">No notebook instances found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/appendix-notebook-and-internet-access.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/appendix-notebook-and-internet-access.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-11</code></td>
+                            <td>SageMaker Model Network Isolation Check</td>
+                            <td class="finding-details">No models found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/mkt-algo-model-internet-free.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/mkt-algo-model-internet-free.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-12</code></td>
+                            <td>SageMaker Endpoint Instance Count Check</td>
+                            <td class="finding-details">No InService endpoints found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/endpoint-scaling.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/endpoint-scaling.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-13</code></td>
+                            <td>SageMaker Monitoring Network Isolation Check</td>
+                            <td class="finding-details">No monitoring schedules found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-network-isolation.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-network-isolation.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-14</code></td>
+                            <td>SageMaker Model Repository Access Check</td>
+                            <td class="finding-details">No models found or all use default Platform access</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-container-repositories.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-container-repositories.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-15</code></td>
+                            <td>SageMaker Feature Store Encryption Check</td>
+                            <td class="finding-details">No feature groups with offline stores found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/feature-store-security.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/feature-store-security.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-16</code></td>
+                            <td>SageMaker Data Quality Job Encryption Check</td>
+                            <td class="finding-details">No data quality job definitions found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-data-quality.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor-data-quality.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-17</code></td>
+                            <td>SageMaker Processing Job Encryption Check</td>
+                            <td class="finding-details">No processing jobs found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/processing-job.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/processing-job.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-18</code></td>
+                            <td>SageMaker Transform Job Encryption Check</td>
+                            <td class="finding-details">No transform jobs found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/batch-transform.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/batch-transform.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-19</code></td>
+                            <td>SageMaker Hyperparameter Tuning Job Encryption Check</td>
+                            <td class="finding-details">No hyperparameter tuning jobs found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/automatic-model-tuning.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/automatic-model-tuning.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-20</code></td>
+                            <td>SageMaker Compilation Job Encryption Check</td>
+                            <td class="finding-details">No compilation jobs found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/neo.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/neo.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-21</code></td>
+                            <td>SageMaker AutoML Job Network Isolation Check</td>
+                            <td class="finding-details">No AutoML jobs found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/autopilot-security.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/autopilot-security.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-22</code></td>
+                            <td>Model Approval Workflow Check</td>
+                            <td class="finding-details">No model package groups found. Model Registry is not being used for model governance.</td>
+                            <td class="resolution-text">Implement Model Registry to track model versions and enforce approval workflows before production deployment.</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-registry-approve.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-registry-approve.html">View Docs</a></td>
+                            <td><span class="severity-badge na">Informational</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-23</code></td>
+                            <td>Model Drift Detection Check</td>
+                            <td class="finding-details">No InService endpoints found to monitor.</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-monitor.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge passed">Passed</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-24</code></td>
+                            <td>A/B Testing and Shadow Deployment Check</td>
+                            <td class="finding-details">No InService endpoints found.</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/model-ab-testing.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/model-ab-testing.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge passed">Passed</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">SM-25</code></td>
+                            <td>ML Lineage Tracking - Experiments Not Used</td>
+                            <td class="finding-details">No SageMaker Experiments found. ML Lineage tracking through Experiments is not being utilized.</td>
+                            <td class="resolution-text">Implement SageMaker Experiments to track ML training runs, hyperparameters, metrics, and model artifacts. This enables reproducibility and auditability.</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/sagemaker/latest/dg/experiments.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/sagemaker/latest/dg/experiments.html">View Docs</a></td>
+                            <td><span class="severity-badge na">Informational</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-01</code></td>
+                            <td>AgentCore VPC Configuration Check</td>
+                            <td class="finding-details">No AgentCore resources found or all resources have proper VPC configuration</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/security/agentcore-vpc.md" target="_blank" class="reference-btn" title="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/security/agentcore-vpc.md">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-02</code></td>
+                            <td>AgentCore IAM Full Access Check</td>
+                            <td class="finding-details">No roles with overly permissive AgentCore access found</td>
+                            <td class="resolution-text">No action required</td>
+                            <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam-awsmanpol.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam-awsmanpol.html">View Docs</a></td>
+                            <td><span class="severity-badge na">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
+                        </tr>
+<tr>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-03</code></td>
                             <td>AgentCore Unused Permissions</td>
                             <td class="finding-details">The following principals have AgentCore permissions but have never accessed the service: role 'ReSCOAIMLMemberRole'</td>
                             <td class="resolution-text">Review and remove unused AgentCore permissions following least privilege principle</td>
@@ -434,52 +640,58 @@ This enables private connectivity via AWS PrivateLink</span></li><li><span class
                             <td><span class="status-badge failed">Failed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-04</code></td>
                             <td>AgentCore Observability Check</td>
                             <td class="finding-details">No AgentCore resources found or all resources have proper observability configuration</td>
-                            <td class="resolution-text">N/A</td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/observability/" target="_blank" class="reference-btn" title="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/observability/">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-05</code></td>
                             <td>AgentCore Encryption Check</td>
                             <td class="finding-details">No AgentCore resources found or all resources have proper encryption configuration</td>
-                            <td class="resolution-text">N/A</td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/key-management.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock/latest/userguide/key-management.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-06</code></td>
                             <td>AgentCore Browser Tool Recording Check</td>
                             <td class="finding-details">No AgentCore Runtimes found to check browser tool configuration</td>
-                            <td class="resolution-text">N/A</td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/browser/" target="_blank" class="reference-btn" title="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/browser/">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-07</code></td>
                             <td>AgentCore Memory Configuration Check</td>
                             <td class="finding-details">No Memory resources found</td>
-                            <td class="resolution-text">N/A</td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/memory/" target="_blank" class="reference-btn" title="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/memory/">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-13</code></td>
                             <td>AgentCore Gateway Configuration Check</td>
                             <td class="finding-details">No Gateway resources found</td>
-                            <td class="resolution-text">N/A</td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/gateway/" target="_blank" class="reference-btn" title="https://aws.github.io/bedrock-agentcore-starter-toolkit/user-guide/gateway/">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-08</code></td>
                             <td>AgentCore VPC Endpoints Missing</td>
                             <td class="finding-details">No AgentCore VPC endpoints found in 4 VPCs. AgentCore API traffic traverses public internet, exposing it to interception.</td>
                             <td class="resolution-text">Create VPC interface endpoints for AgentCore services:
@@ -492,7 +704,8 @@ This enables private connectivity via AWS PrivateLink</td>
                             <td><span class="status-badge failed">Failed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-09</code></td>
                             <td>AgentCore Service-Linked Role Missing</td>
                             <td class="finding-details">Service-linked role 'AWSServiceRoleForBedrockAgentCoreNetwork' does not exist. VPC configuration for AgentCore Runtimes will fail without this role.</td>
                             <td class="resolution-text">The service-linked role is automatically created when you configure VPC for an AgentCore Runtime. Ensure IAM permissions allow service-linked role creation.</td>
@@ -501,31 +714,34 @@ This enables private connectivity via AWS PrivateLink</td>
                             <td><span class="status-badge failed">Failed</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-10</code></td>
                             <td>AgentCore Resource-Based Policies Check</td>
                             <td class="finding-details">No AgentCore resources found to check for resource-based policies</td>
-                            <td class="resolution-text">N/A</td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security_iam_service-with-iam.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security_iam_service-with-iam.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-11</code></td>
                             <td>AgentCore Policy Engine Encryption Check</td>
                             <td class="finding-details">No Policy Engines found</td>
-                            <td class="resolution-text">N/A</td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr>
 <tr>
-                            <td>111111111111</td>
+                            <td>111122223333</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">AC-12</code></td>
                             <td>AgentCore Gateway Encryption Check</td>
                             <td class="finding-details">No Gateways found</td>
-                            <td class="resolution-text">N/A</td>
+                            <td class="resolution-text">No action required</td>
                             <td class="reference-cell"><a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.html" target="_blank" class="reference-btn" title="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.html">View Docs</a></td>
                             <td><span class="severity-badge na">N/A</span></td>
-                            <td><span class="status-badge failed">N/A</span></td>
+                            <td><span class="status-badge na">N/A</span></td>
                         </tr></tbody>
                 </table>
             </div>
@@ -558,12 +774,14 @@ This enables private connectivity via AWS PrivateLink</td>
                     if (searchText && !rowText.includes(searchText)) shouldShow = false;
                     const accountFilter = document.querySelector('.filter-select[data-column="0"]').value.toLowerCase();
                     if (accountFilter && cells[0] && !cells[0].textContent.toLowerCase().includes(accountFilter)) shouldShow = false;
-                    const findingFilter = document.querySelector('.filter-input[data-column="1"]').value.toLowerCase();
-                    if (findingFilter && cells[1] && !cells[1].textContent.toLowerCase().includes(findingFilter)) shouldShow = false;
-                    const severityFilter = document.querySelector('.filter-select[data-column="5"]').value.toLowerCase();
-                    if (severityFilter && cells[5] && !cells[5].textContent.toLowerCase().includes(severityFilter)) shouldShow = false;
-                    const statusFilter = document.querySelector('.filter-select[data-column="6"]').value.toLowerCase();
-                    if (statusFilter && cells[6] && !cells[6].textContent.toLowerCase().includes(statusFilter)) shouldShow = false;
+                    const checkIdFilter = document.querySelector('.filter-input[data-column="1"]').value.toLowerCase();
+                    if (checkIdFilter && cells[1] && !cells[1].textContent.toLowerCase().includes(checkIdFilter)) shouldShow = false;
+                    const findingFilter = document.querySelector('.filter-input[data-column="2"]').value.toLowerCase();
+                    if (findingFilter && cells[2] && !cells[2].textContent.toLowerCase().includes(findingFilter)) shouldShow = false;
+                    const severityFilter = document.querySelector('.filter-select[data-column="6"]').value.toLowerCase();
+                    if (severityFilter && cells[6] && !cells[6].textContent.toLowerCase().includes(severityFilter)) shouldShow = false;
+                    const statusFilter = document.querySelector('.filter-select[data-column="7"]').value.toLowerCase();
+                    if (statusFilter && cells[7] && !cells[7].textContent.toLowerCase().includes(statusFilter)) shouldShow = false;
                     row.style.display = shouldShow ? '' : 'none';
                 });
             }
