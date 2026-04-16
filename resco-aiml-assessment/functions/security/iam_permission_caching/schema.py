@@ -7,6 +7,7 @@ class SeverityEnum(str, Enum):
     HIGH = "High"
     MEDIUM = "Medium"
     LOW = "Low"
+    INFORMATIONAL = "Informational"
     NA = "N/A"
 
 class StatusEnum(str, Enum):

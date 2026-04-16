@@ -154,6 +154,8 @@ Resources:
                 - bedrock:GetAgent
                 - bedrock:ListCustomModels
                 - bedrock:GetCustomModel
+                - bedrock:ListFlows
+                - bedrock:GetFlow
               Resource: '*'
             - Sid: BedrockAgentPermissions
               Effect: Allow

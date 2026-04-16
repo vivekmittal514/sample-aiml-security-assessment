@@ -124,6 +124,8 @@ Resources:
                   - bedrock:GetAgent
                   - bedrock:ListCustomModels
                   - bedrock:GetCustomModel
+                  - bedrock:ListFlows
+                  - bedrock:GetFlow
                   # Bedrock Agent Permissions (Knowledge Bases, Flows)
                   - bedrock-agent:ListKnowledgeBases
                   - bedrock-agent:GetKnowledgeBase
@@ -138,6 +140,7 @@ Resources:
                   - sagemaker:DescribeTrainingJob
                   - sagemaker:ListModelPackageGroups
                   - sagemaker:ListModelPackages
+                  - sagemaker:DescribeModelPackage
                   - sagemaker:ListFeatureGroups
                   - sagemaker:DescribeFeatureGroup
                   - sagemaker:ListPipelines
@@ -152,6 +155,21 @@ Resources:
                   - sagemaker:DescribeEndpoint
                   - sagemaker:ListDataQualityJobDefinitions
                   - sagemaker:DescribeDataQualityJobDefinition
+                  # Additional SageMaker Security Hub Controls (SM.10-15)
+                  - sagemaker:ListTransformJobs
+                  - sagemaker:DescribeTransformJob
+                  - sagemaker:ListHyperParameterTuningJobs
+                  - sagemaker:DescribeHyperParameterTuningJob
+                  - sagemaker:ListCompilationJobs
+                  - sagemaker:DescribeCompilationJob
+                  - sagemaker:ListAutoMLJobs
+                  - sagemaker:DescribeAutoMLJob
+                  # Model Governance Permissions
+                  - sagemaker:ListExperiments
+                  - sagemaker:DescribeExperiment
+                  - sagemaker:ListTrials
+                  - sagemaker:DescribeTrial
+                  - sagemaker:ListAssociations
                   # CloudTrail Permissions
                   - cloudtrail:ListTrails
                   - cloudtrail:GetTrail

@@ -322,13 +322,14 @@ def generate_html_report(assessment_results):
         .findings-table {{ width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }}
         .findings-table thead {{ background: var(--bg-subtle); }}
         .findings-table th {{ padding: 12px 10px; text-align: left; font-weight: 700; font-size: 11px; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 3px solid var(--border-strong); background: var(--bg-subtle); }}
-        .findings-table th:nth-child(1) {{ width: 10%; }} /* Account ID */
-        .findings-table th:nth-child(2) {{ width: 15%; }} /* Finding */
-        .findings-table th:nth-child(3) {{ width: 20%; }} /* Finding Details */
-        .findings-table th:nth-child(4) {{ width: 22%; }} /* Resolution */
-        .findings-table th:nth-child(5) {{ width: 8%; }} /* Reference */
-        .findings-table th:nth-child(6) {{ width: 10%; }} /* Severity */
-        .findings-table th:nth-child(7) {{ width: 10%; }} /* Status */
+        .findings-table th:nth-child(1) {{ width: 9%; }} /* Account ID */
+        .findings-table th:nth-child(2) {{ width: 6%; }} /* Check ID */
+        .findings-table th:nth-child(3) {{ width: 13%; }} /* Finding */
+        .findings-table th:nth-child(4) {{ width: 21%; }} /* Finding Details */
+        .findings-table th:nth-child(5) {{ width: 23%; }} /* Resolution */
+        .findings-table th:nth-child(6) {{ width: 7%; }} /* Reference */
+        .findings-table th:nth-child(7) {{ width: 10%; }} /* Severity */
+        .findings-table th:nth-child(8) {{ width: 11%; }} /* Status */
         .findings-table th .filter-input, .findings-table th .filter-select {{ display: block; width: 100%; margin-top: 8px; padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; font-weight: normal; text-transform: none; letter-spacing: normal; background: var(--bg-card); color: var(--text-primary); }}
         .findings-table th .filter-input:focus, .findings-table th .filter-select:focus {{ outline: none; border-color: var(--accent); }}
         .findings-table th .filter-select {{ cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236b7280' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14L2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; padding-right: 28px; }}
@@ -346,6 +347,7 @@ def generate_html_report(assessment_results):
         .status-badge {{ display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }}
         .status-badge.passed {{ background: #ecfdf5; color: var(--status-passed); }}
         .status-badge.failed {{ background: #fef2f2; color: var(--status-failed); }}
+        .status-badge.na {{ background: #f3f4f6; color: var(--severity-na); }}
         .status-badge::before {{ content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }}
         .reference-btn {{ display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; background: var(--accent-light); color: var(--accent); text-decoration: none; border-radius: 6px; font-size: 11px; font-weight: 600; border: 1px solid var(--border-color); transition: all 0.15s ease; margin: 2px 0; }}
         .reference-btn:hover {{ background: var(--accent); color: white; border-color: var(--accent); }}
@@ -404,12 +406,13 @@ def generate_html_report(assessment_results):
                 <table class="findings-table" id="findingsTable">
                     <thead><tr>
                         <th>Account ID<select class="filter-select" data-column="0"><option value="">All Accounts</option>{account_options}</select></th>
-                        <th>Finding<input type="text" class="filter-input" placeholder="Search findings..." data-column="1"></th>
+                        <th>Check ID<input type="text" class="filter-input" placeholder="Filter..." data-column="1"></th>
+                        <th>Finding<input type="text" class="filter-input" placeholder="Search findings..." data-column="2"></th>
                         <th class="no-filter">Finding Details</th>
                         <th class="no-filter">Resolution</th>
                         <th class="no-filter">Reference</th>
-                        <th>Severity<select class="filter-select" data-column="5"><option value="">All Severities</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="n/a">N/A</option></select></th>
-                        <th>Status<select class="filter-select" data-column="6"><option value="">All Statuses</option><option value="failed">Failed</option><option value="passed">Passed</option><option value="n/a">N/A</option></select></th>
+                        <th>Severity<select class="filter-select" data-column="6"><option value="">All Severities</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="n/a">N/A</option></select></th>
+                        <th>Status<select class="filter-select" data-column="7"><option value="">All Statuses</option><option value="failed">Failed</option><option value="passed">Passed</option><option value="n/a">N/A</option></select></th>
                     </tr></thead>
                     <tbody>{rows}</tbody>
                 </table>
@@ -443,12 +446,14 @@ def generate_html_report(assessment_results):
                     if (searchText && !rowText.includes(searchText)) shouldShow = false;
                     const accountFilter = document.querySelector('.filter-select[data-column="0"]').value.toLowerCase();
                     if (accountFilter && cells[0] && !cells[0].textContent.toLowerCase().includes(accountFilter)) shouldShow = false;
-                    const findingFilter = document.querySelector('.filter-input[data-column="1"]').value.toLowerCase();
-                    if (findingFilter && cells[1] && !cells[1].textContent.toLowerCase().includes(findingFilter)) shouldShow = false;
-                    const severityFilter = document.querySelector('.filter-select[data-column="5"]').value.toLowerCase();
-                    if (severityFilter && cells[5] && !cells[5].textContent.toLowerCase().includes(severityFilter)) shouldShow = false;
-                    const statusFilter = document.querySelector('.filter-select[data-column="6"]').value.toLowerCase();
-                    if (statusFilter && cells[6] && !cells[6].textContent.toLowerCase().includes(statusFilter)) shouldShow = false;
+                    const checkIdFilter = document.querySelector('.filter-input[data-column="1"]').value.toLowerCase();
+                    if (checkIdFilter && cells[1] && !cells[1].textContent.toLowerCase().includes(checkIdFilter)) shouldShow = false;
+                    const findingFilter = document.querySelector('.filter-input[data-column="2"]').value.toLowerCase();
+                    if (findingFilter && cells[2] && !cells[2].textContent.toLowerCase().includes(findingFilter)) shouldShow = false;
+                    const severityFilter = document.querySelector('.filter-select[data-column="6"]').value.toLowerCase();
+                    if (severityFilter && cells[6] && !cells[6].textContent.toLowerCase().includes(severityFilter)) shouldShow = false;
+                    const statusFilter = document.querySelector('.filter-select[data-column="7"]').value.toLowerCase();
+                    if (statusFilter && cells[7] && !cells[7].textContent.toLowerCase().includes(statusFilter)) shouldShow = false;
                     row.style.display = shouldShow ? '' : 'none';
                 }});
             }}
@@ -471,7 +476,12 @@ def generate_html_report(assessment_results):
                         severity = finding.get('Severity', 'N/A').lower()
                         severity_class = severity if severity in ['high', 'medium', 'low'] else 'na'
                         status = finding.get('Status', '').lower()
-                        status_class = 'passed' if status == 'passed' else 'failed'
+                        if status == 'passed':
+                            status_class = 'passed'
+                        elif status == 'n/a':
+                            status_class = 'na'
+                        else:
+                            status_class = 'failed'
 
                         # Handle multiple references
                         refs = finding.get('Reference', '').split('\n')
@@ -481,6 +491,7 @@ def generate_html_report(assessment_results):
 
                         row = f'''<tr>
                             <td>{finding.get('Account_ID', '')}</td>
+                            <td><code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px; font-size: 11px;">{finding.get('Check_ID', '')}</code></td>
                             <td>{finding.get('Finding', '')}</td>
                             <td class="finding-details">{finding.get('Finding_Details', '')}</td>
                             <td class="resolution-text">{finding.get('Resolution', '')}</td>
@@ -491,7 +502,7 @@ def generate_html_report(assessment_results):
                         rows.append(row)
 
         if not rows:
-            rows.append('<tr><td colspan="7" style="text-align: center; padding: 40px; color: var(--text-secondary);">No findings to display</td></tr>')
+            rows.append('<tr><td colspan="8" style="text-align: center; padding: 40px; color: var(--text-secondary);">No findings to display</td></tr>')
 
         return html_template.format(
             account_id=account_id,
@@ -557,39 +568,6 @@ def write_html_to_s3(html_content: str, s3_bucket: str, execution_id: str, accou
         logger.error(f"Error writing HTML report to S3: {str(e)}", exc_info=True)
         return None
 
-def consolidate_multi_account_reports(central_bucket: str):
-    """
-    Consolidate HTML reports from multiple accounts into a single report
-    """
-    try:
-        from bs4 import BeautifulSoup
-
-        # This would need to be implemented to download from other account buckets
-        # For now, just create a placeholder consolidated report
-        logger.info("Multi-account consolidation placeholder - would download from other accounts")
-
-        consolidated_html = '''<!DOCTYPE html>
-<html><head><title>Multi-Account Consolidated Report</title></head>
-<body><h1>Multi-Account Assessment Report</h1>
-<p>Individual account reports have been generated. Manual consolidation required.</p></body></html>'''
-
-        s3_client = boto3.client('s3')
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        s3_key = f'consolidated_report_{timestamp}.html'
-
-        s3_client.put_object(
-            Bucket=central_bucket,
-            Key=s3_key,
-            Body=consolidated_html,
-            ContentType='text/html'
-        )
-
-        logger.info(f"Consolidated report saved: s3://{central_bucket}/{s3_key}")
-
-    except Exception as e:
-        logger.error(f"Error in consolidation: {str(e)}")
-        raise
-
 def lambda_handler(event, context):
     """
     Main Lambda handler
@@ -622,17 +600,9 @@ def lambda_handler(event, context):
         if not s3_key:
             raise Exception("Failed to write HTML report to S3")
 
-        # Check if this is management account and consolidate multi-account reports
-        try:
-            sts_client = boto3.client('sts')
-            current_account = sts_client.get_caller_identity()['Account']
-
-            # Simple check: if we're in management account, try consolidation
-            if current_account == account_id:
-                logger.info("Attempting multi-account consolidation")
-                consolidate_multi_account_reports(s3_bucket)
-        except Exception as e:
-            logger.warning(f"Multi-account consolidation failed: {str(e)}")
+        # Note: Multi-account consolidation is handled by consolidate_html_reports.py
+        # in the CodeBuild post-build phase, not here. This Lambda only generates
+        # the per-account security_assessment_*.html report.
 
         return {
             'statusCode': 200,

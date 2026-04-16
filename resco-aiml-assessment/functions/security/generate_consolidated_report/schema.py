@@ -7,11 +7,13 @@ class SeverityEnum(str, Enum):
     HIGH = "High"
     MEDIUM = "Medium"
     LOW = "Low"
+    INFORMATIONAL = "Informational"
     NA = "N/A"
 
 class StatusEnum(str, Enum):
     FAILED = "Failed"
     PASSED = "Passed"
+    NA = "N/A"
 
 class Finding(BaseModel):
     """Represents a security finding with required fields and validations"""

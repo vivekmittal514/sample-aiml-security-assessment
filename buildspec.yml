@@ -83,6 +83,9 @@ phases:
           # Track failed accounts
           failed_accounts=()
 
+          # Create directory to store execution ARNs for post-build phase
+          mkdir -p /tmp/execution_arns
+
           for accountId in $account_list; do
             echo "Processing account $accountId"
             if [[ $accountId == $AWS_ACCOUNT_ID ]]; then
@@ -110,7 +113,7 @@ phases:
             fi
 
             echo "Deploying to account $accountId"
-            if ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name resco-aiml-security-$accountId --capabilities CAPABILITY_IAM --no-confirm-changeset --resolve-s3 --region $AWS_DEFAULT_REGION; then
+            if ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name resco-aiml-security-$accountId --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --resolve-s3 --region $AWS_DEFAULT_REGION; then
               echo "ERROR: Deploy failed for account $accountId"
               failed_accounts+=($accountId)
               unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
@@ -121,6 +124,8 @@ phases:
             if [[ $STATE_MACHINE_ARN != "" && $STATE_MACHINE_ARN != "None" ]]; then
               if EXECUTION_ARN=$(aws stepfunctions start-execution --state-machine-arn $STATE_MACHINE_ARN --input "{\"accountId\":\"$accountId\"}" --query 'executionArn' --output text); then
                 echo "Started execution: $EXECUTION_ARN"
+                # Save execution ARN for post-build phase
+                echo "$EXECUTION_ARN" > /tmp/execution_arns/$accountId.txt
               else
                 echo "WARNING: Failed to start Step Function execution for account $accountId"
               fi
@@ -134,7 +139,7 @@ phases:
           done
 
           echo "Deploying to management account $AWS_ACCOUNT_ID"
-          if ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name resco-aiml-security-mgmt --capabilities CAPABILITY_IAM --no-confirm-changeset --resolve-s3 --region $AWS_DEFAULT_REGION; then
+          if ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name resco-aiml-security-mgmt --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --resolve-s3 --region $AWS_DEFAULT_REGION; then
             echo "ERROR: Deploy failed for management account"
             failed_accounts+=($AWS_ACCOUNT_ID)
           else
@@ -142,6 +147,8 @@ phases:
             if [[ $STATE_MACHINE_ARN != "" && $STATE_MACHINE_ARN != "None" ]]; then
               if MGMT_EXECUTION_ARN=$(aws stepfunctions start-execution --state-machine-arn $STATE_MACHINE_ARN --input "{\"accountId\":\"$AWS_ACCOUNT_ID\"}" --query 'executionArn' --output text); then
                 echo "Started management account execution: $MGMT_EXECUTION_ARN"
+                # Save execution ARN for post-build phase
+                echo "$MGMT_EXECUTION_ARN" > /tmp/execution_arns/$AWS_ACCOUNT_ID.txt
               else
                 echo "WARNING: Failed to start Step Function execution for management account"
               fi
@@ -157,7 +164,7 @@ phases:
         else
           echo "Single account deployment"
           STACK_NAME="aiml-sec-${AWS_ACCOUNT_ID}"
-          if ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name $STACK_NAME --capabilities CAPABILITY_IAM --no-confirm-changeset --resolve-s3; then
+          if ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name $STACK_NAME --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --resolve-s3; then
             echo "ERROR: SAM deploy failed for single account"
             exit 1
           fi
@@ -166,10 +173,15 @@ phases:
             echo "ERROR: Failed to retrieve State Machine ARN"
             exit 1
           fi
-          if ! aws stepfunctions start-execution --state-machine-arn $STATE_MACHINE_ARN --input "{\"accountId\":\"$AWS_ACCOUNT_ID\"}"; then
+          # Capture execution ARN for post-build phase to wait on
+          EXECUTION_ARN=$(aws stepfunctions start-execution --state-machine-arn $STATE_MACHINE_ARN --input "{\"accountId\":\"$AWS_ACCOUNT_ID\"}" --query 'executionArn' --output text)
+          if [[ -z "$EXECUTION_ARN" || "$EXECUTION_ARN" == "None" ]]; then
             echo "ERROR: Failed to start Step Function execution"
             exit 1
           fi
+          echo "Started Step Function execution: $EXECUTION_ARN"
+          # Save execution ARN to file for post-build phase
+          echo "$EXECUTION_ARN" > /tmp/single_account_execution_arn.txt
         fi
   post_build:
     commands:
@@ -231,10 +243,10 @@ phases:
             fi
 
             # Wait for Step Function to complete before copying files
-            STATE_MACHINE_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`AIMLAssessmentStateMachineArn`].OutputValue' --output text 2>/dev/null)
-            if [[ $STATE_MACHINE_ARN != "" && $STATE_MACHINE_ARN != "None" ]]; then
-              echo "Waiting for Step Function completion in account $accountId..."
-              EXECUTION_ARN=$(aws stepfunctions list-executions --state-machine-arn $STATE_MACHINE_ARN --status-filter RUNNING --max-items 1 --query 'executions[0].executionArn' --output text 2>/dev/null)
+            # Read the execution ARN saved from build phase
+            if [[ -f /tmp/execution_arns/$accountId.txt ]]; then
+              EXECUTION_ARN=$(cat /tmp/execution_arns/$accountId.txt)
+              echo "Waiting for Step Function execution in account $accountId: $EXECUTION_ARN"
               if [[ $EXECUTION_ARN != "" && $EXECUTION_ARN != "None" ]]; then
                 timeout=300
                 elapsed=0
@@ -247,7 +259,7 @@ phases:
                     fi
                     break
                   fi
-                  echo "Step Function for account $accountId still running... waiting 30 seconds"
+                  echo "Step Function for account $accountId still running (status: $STATUS)... waiting 30 seconds"
                   sleep 30
                   elapsed=$((elapsed + 30))
                 done
@@ -256,7 +268,7 @@ phases:
                 fi
               fi
             else
-              echo "WARNING: No State Machine ARN found for account $accountId"
+              echo "WARNING: No execution ARN file found for account $accountId - execution may not have started"
             fi
 
             # Now copy files from the completed assessment
@@ -346,10 +358,10 @@ phases:
           echo "Single account post-build processing"
           STACK_NAME="aiml-sec-${AWS_ACCOUNT_ID}"
 
-          STATE_MACHINE_ARN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`AIMLAssessmentStateMachineArn`].OutputValue' --output text 2>/dev/null)
-          if [[ $STATE_MACHINE_ARN != "" && $STATE_MACHINE_ARN != "None" ]]; then
-            echo "Waiting for Step Function completion..."
-            EXECUTION_ARN=$(aws stepfunctions list-executions --state-machine-arn $STATE_MACHINE_ARN --status-filter RUNNING --max-items 1 --query 'executions[0].executionArn' --output text 2>/dev/null)
+          # Read the execution ARN saved from build phase
+          if [[ -f /tmp/single_account_execution_arn.txt ]]; then
+            EXECUTION_ARN=$(cat /tmp/single_account_execution_arn.txt)
+            echo "Waiting for Step Function execution: $EXECUTION_ARN"
             if [[ $EXECUTION_ARN != "" && $EXECUTION_ARN != "None" ]]; then
               timeout=300
               elapsed=0
@@ -362,16 +374,16 @@ phases:
                   fi
                   break
                 fi
-                echo "Step Function still running... waiting 30 seconds"
+                echo "Step Function still running (status: $STATUS)... waiting 30 seconds"
                 sleep 30
                 elapsed=$((elapsed + 30))
               done
               if [[ $elapsed -ge $timeout ]]; then
                 echo "WARNING: Timeout waiting for Step Function completion"
               fi
-            else
-              echo "No running executions found"
             fi
+          else
+            echo "WARNING: No execution ARN file found from build phase"
           fi
 
           # Get assessment bucket and sync results to BUCKET_REPORT for consistency
