@@ -6,9 +6,9 @@ This project provides a framework for performing security assessments of AI/ML w
 
 This assessment framework is designed for workloads using [Amazon Bedrock](https://aws.amazon.com/bedrock/), [Amazon Bedrock AgentCore](https://aws.github.io/bedrock-agentcore-starter-toolkit/), or [Amazon SageMaker AI](https://aws.amazon.com/sagemaker/ai/).
 
-The framework performs **53 security checks** across these services, aligned with AWS Security Hub controls and security best practices:
+The framework performs **52 security checks** across these services, aligned with AWS Security Hub controls and security best practices:
 - **Amazon Bedrock**: 14 checks (guardrails, encryption, VPC endpoints, IAM permissions)
-- **Amazon SageMaker**: 26 checks (SageMaker.1-5 controls, encryption, network isolation, IAM, MLOps)
+- **Amazon SageMaker**: 25 checks (SageMaker.1-5 controls, encryption, network isolation, IAM, MLOps)
 - **Amazon Bedrock AgentCore**: 13 checks (VPC configuration, encryption, observability, resource policies)
 
 
@@ -20,7 +20,7 @@ The framework performs **53 security checks** across these services, aligned wit
 
 ## Architecture
 
-![Architecture](./generated-diagrams/ArchitectureDiagram.png)
+![Architecture](./diagrams/ArchitectureDiagram.png)
 
 ## Single-Account Deployment
 
@@ -386,7 +386,7 @@ We welcome community contributions! Please see [DEVELOPER_GUIDE.md](DEVELOPER_GU
 
 ## Security Checks Reference
 
-### Amazon SageMaker Checks (26)
+### Amazon SageMaker Checks (25)
 
 | Check ID | Check | Description | AWS Security Hub Control |
 |----------|-------|-------------|--------------------------|

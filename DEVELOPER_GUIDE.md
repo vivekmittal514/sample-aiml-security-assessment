@@ -7,13 +7,13 @@ The ReSCO (Resilience, Security, and Cost Optimization) Assessment Framework is 
 ## Architecture Diagrams
 
 ### Phase 1: Deployment Setup (CloudFormation)
-![ReSCO Deployment Phase](generated-diagrams/resco-deployment-phase.png)
+![ReSCO Deployment Phase](diagrams/deployment-phase.png)
 
 ### Phase 2: Assessment Execution (CodeBuild)
-![ReSCO Execution Phase](generated-diagrams/resco-execution-phase.png)
+![ReSCO Execution Phase](diagrams/execution-phase.png)
 
 ### Service-Level Assessment Architecture
-![ReSCO Service-Level Architecture](generated-diagrams/resco-service-level-architecture.png)
+![ReSCO Service-Level Architecture](diagrams/service-level-architecture.png)
 
 ## Two-Phase Architecture
 
@@ -108,9 +108,9 @@ resco-assessments/
 
 ### 1. AI/ML Assessment (`resco-aiml-assessment/`)
 
-The AI/ML assessment module includes **53 security checks** across three services:
+The AI/ML assessment module includes **52 security checks** across three services:
 - **Bedrock Assessment Lambda**: 14 checks (BR-01 to BR-14)
-- **SageMaker Assessment Lambda**: 26 checks (SM-01 to SM-25)
+- **SageMaker Assessment Lambda**: 25 checks (SM-01 to SM-25)
 - **AgentCore Assessment Lambda**: 13 checks (AC-01 to AC-13)
 
 For the complete list of checks with descriptions, see the [Security Checks Reference](README.md#security-checks-reference) in the main README.
@@ -441,7 +441,7 @@ logger.debug(f"Found {len(resources)} resources to assess")
 ## Module Development Roadmap
 
 ### Current Status
-- **AI/ML Assessment**: 53 security checks across Bedrock (14), SageMaker (26), and AgentCore (13) Lambdas (Active)
+- **AI/ML Assessment**: 52 security checks across Bedrock (14), SageMaker (25), and AgentCore (13) Lambdas (Active)
 
 
 ### Service-Level Development Pattern
