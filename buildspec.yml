@@ -305,10 +305,6 @@ phases:
           done
 
           echo "Uploading files to management account S3 bucket and creating consolidated report"
-          if ! pip3 install -q beautifulsoup4; then
-            echo "ERROR: Failed to install beautifulsoup4"
-            exit 1
-          fi
 
           # Debug: Show which directories exist
           echo "Available account directories:"

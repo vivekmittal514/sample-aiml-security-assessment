@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-Multi-account HTML report consolidation script.
+Multi-account report consolidation script.
 
 This script is executed during CodeBuild post-build phase to consolidate
-HTML reports from multiple AWS accounts into a single report.
+security findings from CSV reports across multiple AWS accounts into a single
+consolidated HTML report.
 
-It uses the shared report_template module from the Lambda function directory.
+It uses the shared report_template module from the Lambda function directory
+to ensure consistent report generation between single-account and multi-account
+reports.
 """
 import os
 import sys
 import glob
+import csv
 import boto3
-from bs4 import BeautifulSoup
 from datetime import datetime
 from botocore.exceptions import ClientError
 
@@ -21,7 +24,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'resco-aiml-assessmen
 from report_template import generate_html_report
 
 def consolidate_html_reports():
-    """Consolidate HTML reports from all accounts into a single report using shared template"""
+    """
+    Consolidate security findings from CSV reports across all accounts into a
+    single HTML report using the shared report template.
+
+    Reads CSV files from /tmp/account-files/*/security_report_*.csv and generates
+    a consolidated multi-account report using the same template as single-account reports.
+    """
 
     try:
         s3 = boto3.client('s3')
@@ -44,73 +53,67 @@ def consolidate_html_reports():
         if account_id == 'consolidated-reports':
             continue
 
-        html_files = glob.glob(os.path.join(account_dir, '**/security_assessment_*.html'), recursive=True)
+        # Find all CSV files for this account
+        csv_files = glob.glob(os.path.join(account_dir, '**/*_security_report_*.csv'), recursive=True)
 
-        if html_files:
-            print(f"Processing HTML files for account {account_id}")
+        if csv_files:
+            print(f"Processing CSV files for account {account_id}")
             account_ids.add(account_id)
 
-            try:
-                with open(html_files[0], 'r') as f:
-                    soup = BeautifulSoup(f.read(), 'html.parser')
-            except IOError as e:
-                print(f"Error reading HTML file for account {account_id}: {str(e)}")
-                continue
-            except Exception as e:
-                print(f"Error parsing HTML for account {account_id}: {str(e)}")
-                continue
+            for csv_file in csv_files:
+                try:
+                    with open(csv_file, 'r', encoding='utf-8') as f:
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            # Map CSV columns to finding structure
+                            finding = {
+                                'account_id': account_id,
+                                'check_id': row.get('Check_ID', ''),
+                                'finding': row.get('Finding', ''),
+                                'details': row.get('Finding_Details', ''),
+                                'resolution': row.get('Resolution', ''),
+                                'reference': row.get('Reference', ''),
+                                'severity': row.get('Severity', 'N/A'),
+                                'status': row.get('Status', '')
+                            }
 
-            tbody = soup.find('tbody')
-            if tbody:
-                rows = tbody.find_all('tr')
-                for row in rows:
-                    cells = row.find_all('td')
-                    if len(cells) >= 8:
-                        finding = {
-                            'account_id': account_id,
-                            'check_id': cells[1].get_text(strip=True) if len(cells) > 1 else '',
-                            'finding': cells[2].get_text(strip=True) if len(cells) > 2 else '',
-                            'details': cells[3].get_text(strip=True) if len(cells) > 3 else '',
-                            'resolution': cells[4].get_text(strip=True) if len(cells) > 4 else '',
-                            'reference': '',
-                            'severity': cells[6].get_text(strip=True) if len(cells) > 6 else '',
-                            'status': cells[7].get_text(strip=True) if len(cells) > 7 else ''
-                        }
-                        ref_cell = cells[5] if len(cells) > 5 else None
-                        if ref_cell:
-                            links = ref_cell.find_all('a')
-                            if links:
-                                finding['reference'] = links[0].get('href', '')
-                            else:
-                                finding['reference'] = ref_cell.get_text(strip=True)
+                            # Determine service from Check_ID prefix
+                            check_id = finding['check_id'].upper()
+                            status = finding['status'].lower()
 
-                        check_id = finding.get('check_id', '').upper()
-                        status = finding['status'].lower()
-                        if check_id.startswith('BR-'):
-                            service = 'bedrock'
-                        elif check_id.startswith('SM-'):
-                            service = 'sagemaker'
-                        elif check_id.startswith('AC-'):
-                            service = 'agentcore'
-                        else:
-                            finding_name = finding['finding'].lower()
-                            if 'bedrock' in finding_name or 'guardrail' in finding_name:
+                            if check_id.startswith('BR-'):
                                 service = 'bedrock'
-                            elif 'sagemaker' in finding_name or 'domain' in finding_name:
+                            elif check_id.startswith('SM-'):
                                 service = 'sagemaker'
-                            elif 'agentcore' in finding_name:
+                            elif check_id.startswith('AC-'):
                                 service = 'agentcore'
                             else:
-                                service = 'bedrock'
+                                # Fallback to finding name analysis
+                                finding_name = finding['finding'].lower()
+                                if 'bedrock' in finding_name or 'guardrail' in finding_name:
+                                    service = 'bedrock'
+                                elif 'sagemaker' in finding_name or 'domain' in finding_name:
+                                    service = 'sagemaker'
+                                elif 'agentcore' in finding_name:
+                                    service = 'agentcore'
+                                else:
+                                    service = 'bedrock'
 
-                        finding['_service'] = service
-                        all_findings.append(finding)
-                        service_findings[service].append(finding)
+                            finding['_service'] = service
+                            all_findings.append(finding)
+                            service_findings[service].append(finding)
 
-                        if status == 'passed':
-                            service_stats[service]['passed'] += 1
-                        elif status == 'failed':
-                            service_stats[service]['failed'] += 1
+                            if status == 'passed':
+                                service_stats[service]['passed'] += 1
+                            elif status == 'failed':
+                                service_stats[service]['failed'] += 1
+
+                except IOError as e:
+                    print(f"Error reading CSV file {csv_file}: {str(e)}")
+                    continue
+                except Exception as e:
+                    print(f"Error parsing CSV file {csv_file}: {str(e)}")
+                    continue
 
     if all_findings:
         timestamp_display = datetime.now().strftime('%B %d, %Y %H:%M:%S UTC')
@@ -149,7 +152,7 @@ def consolidate_html_reports():
             print(f"Unexpected error uploading consolidated report: {str(e)}")
             raise
     else:
-        print('No HTML reports found for consolidation')
+        print('No findings found for consolidation')
         for account_dir in glob.glob('/tmp/account-files/*/'):
             account_id = os.path.basename(account_dir.rstrip('/'))
             all_files = glob.glob(os.path.join(account_dir, '**/*'), recursive=True)
