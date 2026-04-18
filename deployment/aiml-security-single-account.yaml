@@ -293,7 +293,6 @@ Resources:
               - Action:
                   - cloudformation:GetTemplateSummary
                   - cloudformation:ListStacks
-                  - cloudformation:DescribeStacks
                 Effect: Allow
                 Resource: "*"
         - PolicyName: SAMDeploymentPermissions
