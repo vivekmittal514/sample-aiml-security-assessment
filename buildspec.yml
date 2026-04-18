@@ -139,6 +139,13 @@ phases:
           done
 
           echo "Deploying to management account $AWS_ACCOUNT_ID"
+          # Clean up any leftover SAM managed stack from previous failed runs
+          SAM_STATUS=$(aws cloudformation describe-stacks --stack-name aws-sam-cli-managed-default --query 'Stacks[0].StackStatus' --output text 2>/dev/null)
+          if [[ "$SAM_STATUS" == "ROLLBACK_COMPLETE" || "$SAM_STATUS" == "DELETE_FAILED" ]]; then
+            echo "Cleaning up leftover SAM managed stack (status: $SAM_STATUS)"
+            aws cloudformation delete-stack --stack-name aws-sam-cli-managed-default
+            aws cloudformation wait stack-delete-complete --stack-name aws-sam-cli-managed-default 2>/dev/null || true
+          fi
           if ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name resco-aiml-security-mgmt --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --resolve-s3 --region $AWS_DEFAULT_REGION; then
             echo "ERROR: Deploy failed for management account"
             failed_accounts+=($AWS_ACCOUNT_ID)

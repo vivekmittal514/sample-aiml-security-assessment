@@ -199,6 +199,10 @@ Resources:
     Properties:
       VersioningConfiguration:
         Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -287,7 +291,33 @@ Resources:
             Version: "2012-10-17"
             Statement:
               - Action:
-                  - cloudformation:*
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ListStackResources
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:ListStacks
+                Effect: Allow
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/resco-aiml-*/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*"
+              - Action:
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:CreateChangeSet
+                Effect: Allow
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:aws:transform/Serverless-2016-10-31"
+              - Action:
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ListStacks
                 Effect: Allow
                 Resource: "*"
         - PolicyName: SAMPermissions
@@ -343,10 +373,15 @@ Resources:
                   - states:TagResource
                   - states:UntagResource
                   - states:ListStateMachines
+                  - states:StartExecution
+                  - states:DescribeExecution
+                  - states:ListExecutions
                 Effect: Allow
                 Resource: '*'
               - Sid: S3Permissions
                 Action:
+                  - s3:CreateBucket
+                  - s3:DeleteBucket
                   - s3:PutBucketPolicy
                   - s3:GetBucketPolicy
                   - s3:DeleteBucketPolicy

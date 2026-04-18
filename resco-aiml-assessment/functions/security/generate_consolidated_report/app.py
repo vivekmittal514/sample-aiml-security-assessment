@@ -604,6 +604,16 @@ def lambda_handler(event, context):
         # in the CodeBuild post-build phase, not here. This Lambda only generates
         # the per-account security_assessment_*.html report.
 
+        # Delete the IAM permissions cache file — it contains full policy documents
+        # and should not persist in S3 after the assessment completes
+        try:
+            cache_key = f'permissions_cache_{execution_id}.json'
+            s3_client = boto3.client('s3', config=boto3_config)
+            s3_client.delete_object(Bucket=s3_bucket, Key=cache_key)
+            logger.info(f"Deleted permissions cache: {cache_key}")
+        except Exception as cache_err:
+            logger.warning(f"Failed to delete permissions cache: {cache_err}")
+
         return {
             'statusCode': 200,
             'executionId': execution_id,
