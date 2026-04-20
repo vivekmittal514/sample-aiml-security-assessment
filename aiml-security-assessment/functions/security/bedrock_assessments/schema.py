@@ -4,15 +4,11 @@ from pydantic import BaseModel, Field, HttpUrl, validator
 from datetime import datetime
 import re
 
-class Config:
-    strict = True  # Enables strict type checking
-
 class SeverityEnum(str, Enum):
     HIGH = "High"
     MEDIUM = "Medium"
     LOW = "Low"
     INFORMATIONAL = "Informational"
-    NA = "N/A"
 
 class StatusEnum(str, Enum):
     FAILED = "Failed"
