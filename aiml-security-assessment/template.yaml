@@ -153,6 +153,7 @@ Resources:
                 - bedrock:GetAgent
                 - bedrock:ListCustomModels
                 - bedrock:GetCustomModel
+                - bedrock:GetModelCustomizationJob
                 - bedrock:ListFlows
                 - bedrock:GetFlow
               Resource: '*'
@@ -175,6 +176,7 @@ Resources:
                 - cloudtrail:ListTrails
                 - cloudtrail:GetTrail
                 - cloudtrail:GetEventSelectors
+                - cloudtrail:GetTrailStatus
               Resource: '*'
             - Sid: LambdaPermissions
               Effect: Allow

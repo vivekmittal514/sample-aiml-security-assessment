@@ -1,0 +1,57 @@
+name: SAM Validate & Build
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  sam-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get changed SAM files
+        id: changed-files
+        uses: tj-actions/changed-files@v46
+        with:
+          files: |
+            aiml-security-assessment/**
+            deployment/**
+
+      - name: Set up Python
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up SAM CLI
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - name: SAM Validate (single-account)
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          cd aiml-security-assessment
+          sam validate --template template.yaml --lint
+
+      - name: SAM Validate (multi-account)
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          cd aiml-security-assessment
+          sam validate --template template-multi-account.yaml --lint
+
+      - name: SAM Build (single-account)
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          cd aiml-security-assessment
+          sam build --template template.yaml
+
+      - name: Skip message
+        if: steps.changed-files.outputs.any_changed == 'false'
+        run: echo "No SAM/deployment files changed - skipping validation"

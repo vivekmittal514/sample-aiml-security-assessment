@@ -1,0 +1,77 @@
+name: ASH Security Scan
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v46
+        with:
+          files: |
+            **/*.py
+            **/*.yaml
+            **/*.yml
+            **/*.json
+            **/*.sh
+            **/requirements*.txt
+            **/Dockerfile*
+
+      - name: Set up Python
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install ASH
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: pip install git+https://github.com/awslabs/automated-security-helper.git@v3.1.2
+
+      - name: Create temp directory for changed files
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          mkdir -p /tmp/ash-scan
+          echo "Changed files for security scan:"
+          echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n'
+
+      - name: Copy changed files to temp directory
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            if [ -f "$file" ]; then
+              mkdir -p "/tmp/ash-scan/$(dirname "$file")"
+              cp "$file" "/tmp/ash-scan/$file"
+              echo "Copied for scan: $file"
+            fi
+          done
+
+      - name: Run ASH scan on changed files
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          cd /tmp/ash-scan
+          ash --mode container 2>&1 | tee /tmp/ash-output.log
+        continue-on-error: true
+
+      - name: Display scan results
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          if [ -f "/tmp/ash-output.log" ]; then
+            echo "## ASH Security Scan Results"
+            cat /tmp/ash-output.log
+          fi
+
+      - name: Skip message
+        if: steps.changed-files.outputs.any_changed == 'false'
+        run: echo "No scannable files changed - skipping security scan"

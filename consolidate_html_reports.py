@@ -10,6 +10,7 @@ It uses the shared report_template module from the Lambda function directory
 to ensure consistent report generation between single-account and multi-account
 reports.
 """
+
 import os
 import sys
 import glob
@@ -19,9 +20,19 @@ from datetime import datetime
 from botocore.exceptions import ClientError
 
 # Add the Lambda function directory to path to import shared template
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'aiml-security-assessment', 'functions', 'security', 'generate_consolidated_report'))
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(__file__),
+        "aiml-security-assessment",
+        "functions",
+        "security",
+        "generate_consolidated_report",
+    ),
+)
 
 from report_template import generate_html_report
+
 
 def consolidate_html_reports():
     """
@@ -33,28 +44,34 @@ def consolidate_html_reports():
     """
 
     try:
-        s3 = boto3.client('s3')
+        s3 = boto3.client("s3")
     except Exception as e:
         print(f"Error creating S3 client: {str(e)}")
         raise
 
-    bucket = os.environ.get('BUCKET_REPORT')
+    bucket = os.environ.get("BUCKET_REPORT")
     if not bucket:
         print("Error: BUCKET_REPORT environment variable is not set")
         raise ValueError("BUCKET_REPORT environment variable is required")
 
     all_findings = []
     account_ids = set()
-    service_stats = {'bedrock': {'passed': 0, 'failed': 0}, 'sagemaker': {'passed': 0, 'failed': 0}, 'agentcore': {'passed': 0, 'failed': 0}}
-    service_findings = {'bedrock': [], 'sagemaker': [], 'agentcore': []}
+    service_stats = {
+        "bedrock": {"passed": 0, "failed": 0, "na": 0},
+        "sagemaker": {"passed": 0, "failed": 0, "na": 0},
+        "agentcore": {"passed": 0, "failed": 0, "na": 0},
+    }
+    service_findings = {"bedrock": [], "sagemaker": [], "agentcore": []}
 
-    for account_dir in glob.glob('/tmp/account-files/*/'):
-        account_id = os.path.basename(account_dir.rstrip('/'))
-        if account_id == 'consolidated-reports':
+    for account_dir in glob.glob("/tmp/account-files/*/"):
+        account_id = os.path.basename(account_dir.rstrip("/"))
+        if account_id == "consolidated-reports":
             continue
 
         # Find all CSV files for this account
-        csv_files = glob.glob(os.path.join(account_dir, '**/*_security_report_*.csv'), recursive=True)
+        csv_files = glob.glob(
+            os.path.join(account_dir, "**/*_security_report_*.csv"), recursive=True
+        )
 
         if csv_files:
             print(f"Processing CSV files for account {account_id}")
@@ -62,51 +79,59 @@ def consolidate_html_reports():
 
             for csv_file in csv_files:
                 try:
-                    with open(csv_file, 'r', encoding='utf-8') as f:
+                    with open(csv_file, "r", encoding="utf-8") as f:
                         reader = csv.DictReader(f)
                         for row in reader:
                             # Map CSV columns to finding structure
                             finding = {
-                                'account_id': account_id,
-                                'check_id': row.get('Check_ID', ''),
-                                'finding': row.get('Finding', ''),
-                                'details': row.get('Finding_Details', ''),
-                                'resolution': row.get('Resolution', ''),
-                                'reference': row.get('Reference', ''),
-                                'severity': row.get('Severity', 'N/A'),
-                                'status': row.get('Status', '')
+                                "account_id": account_id,
+                                "check_id": row.get("Check_ID", ""),
+                                "finding": row.get("Finding", ""),
+                                "details": row.get("Finding_Details", ""),
+                                "resolution": row.get("Resolution", ""),
+                                "reference": row.get("Reference", ""),
+                                "severity": row.get("Severity", "N/A"),
+                                "status": row.get("Status", ""),
                             }
 
                             # Determine service from Check_ID prefix
-                            check_id = finding['check_id'].upper()
-                            status = finding['status'].lower()
+                            check_id = finding["check_id"].upper()
+                            status = finding["status"].lower()
 
-                            if check_id.startswith('BR-'):
-                                service = 'bedrock'
-                            elif check_id.startswith('SM-'):
-                                service = 'sagemaker'
-                            elif check_id.startswith('AC-'):
-                                service = 'agentcore'
+                            if check_id.startswith("BR-"):
+                                service = "bedrock"
+                            elif check_id.startswith("SM-"):
+                                service = "sagemaker"
+                            elif check_id.startswith("AC-"):
+                                service = "agentcore"
                             else:
                                 # Fallback to finding name analysis
-                                finding_name = finding['finding'].lower()
-                                if 'bedrock' in finding_name or 'guardrail' in finding_name:
-                                    service = 'bedrock'
-                                elif 'sagemaker' in finding_name or 'domain' in finding_name:
-                                    service = 'sagemaker'
-                                elif 'agentcore' in finding_name:
-                                    service = 'agentcore'
+                                finding_name = finding["finding"].lower()
+                                if (
+                                    "bedrock" in finding_name
+                                    or "guardrail" in finding_name
+                                ):
+                                    service = "bedrock"
+                                elif (
+                                    "sagemaker" in finding_name
+                                    or "domain" in finding_name
+                                ):
+                                    service = "sagemaker"
+                                elif "agentcore" in finding_name:
+                                    service = "agentcore"
                                 else:
-                                    service = 'bedrock'
+                                    service = "bedrock"
 
-                            finding['_service'] = service
+                            finding["_service"] = service
                             all_findings.append(finding)
                             service_findings[service].append(finding)
 
-                            if status == 'passed':
-                                service_stats[service]['passed'] += 1
-                            elif status == 'failed':
-                                service_stats[service]['failed'] += 1
+                            if status == "passed":
+                                service_stats[service]["passed"] += 1
+                            elif status == "failed":
+                                service_stats[service]["failed"] += 1
+                            elif status == "n/a":
+                                service_stats[service]["na"] += 1
 
                 except IOError as e:
                     print(f"Error reading CSV file {csv_file}: {str(e)}")
@@ -116,34 +141,34 @@ def consolidate_html_reports():
                     continue
 
     if all_findings:
-        timestamp_display = datetime.now().strftime('%B %d, %Y %H:%M:%S UTC')
+        timestamp_display = datetime.now().strftime("%B %d, %Y %H:%M:%S UTC")
 
         # Use shared template to generate report
         consolidated_html = generate_html_report(
             all_findings=all_findings,
             service_findings=service_findings,
             service_stats=service_stats,
-            mode='multi',
+            mode="multi",
             account_ids=list(account_ids),
-            timestamp=timestamp_display
+            timestamp=timestamp_display,
         )
 
-        timestamp_file = datetime.now().strftime('%Y%m%d_%H%M%S')
-        s3_key = f'consolidated-reports/multi_account_report_{timestamp_file}.html'
+        timestamp_file = datetime.now().strftime("%Y%m%d_%H%M%S")
+        s3_key = f"consolidated-reports/multi_account_report_{timestamp_file}.html"
 
         try:
             s3.put_object(
                 Bucket=bucket,
                 Key=s3_key,
                 Body=consolidated_html,
-                ContentType='text/html'
+                ContentType="text/html",
             )
-            print(f'Consolidated report saved to s3://{bucket}/{s3_key}')
+            print(f"Consolidated report saved to s3://{bucket}/{s3_key}")
         except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == 'NoSuchBucket':
+            error_code = e.response["Error"]["Code"]
+            if error_code == "NoSuchBucket":
                 print(f"Error: Bucket '{bucket}' does not exist")
-            elif error_code == 'AccessDenied':
+            elif error_code == "AccessDenied":
                 print(f"Error: Access denied to bucket '{bucket}'")
             else:
                 print(f"Error uploading to S3: {str(e)}")
@@ -152,11 +177,12 @@ def consolidate_html_reports():
             print(f"Unexpected error uploading consolidated report: {str(e)}")
             raise
     else:
-        print('No findings found for consolidation')
-        for account_dir in glob.glob('/tmp/account-files/*/'):
-            account_id = os.path.basename(account_dir.rstrip('/'))
-            all_files = glob.glob(os.path.join(account_dir, '**/*'), recursive=True)
+        print("No findings found for consolidation")
+        for account_dir in glob.glob("/tmp/account-files/*/"):
+            account_id = os.path.basename(account_dir.rstrip("/"))
+            all_files = glob.glob(os.path.join(account_dir, "**/*"), recursive=True)
             print(f"Account {account_id} files: {all_files}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     consolidate_html_reports()

@@ -21,7 +21,7 @@ The framework evaluates your AI/ML workloads against AWS security best practices
 | Service | Number of Checks | Focus Areas |
 |---------|------------------|-------------|
 | Amazon SageMaker AI | 25 | Security Hub controls, encryption, network isolation, IAM, MLOps |
-| Amazon Bedrock | 14 | Guardrails, encryption, VPC endpoints, IAM permissions, logging |
+| Amazon Bedrock | 13 | Guardrails, encryption, VPC endpoints, IAM permissions, logging |
 | Amazon Bedrock AgentCore | 13 | VPC configuration, encryption, observability, resource policies |
 
 ---
@@ -33,7 +33,7 @@ Each security check has a unique identifier with a service prefix:
 | Prefix | Service | Example |
 |--------|---------|---------|
 | **SM-XX** | Amazon SageMaker | SM-01, SM-25 |
-| **BR-XX** | Amazon Bedrock | BR-01, BR-14 |
+| **BR-XX** | Amazon Bedrock | BR-01, BR-13 |
 | **AC-XX** | Amazon Bedrock AgentCore | AC-01, AC-13 |
 
 ---
@@ -104,7 +104,7 @@ Each security check has a unique identifier with a service prefix:
 
 ---
 
-## Amazon Bedrock Checks (14)
+## Amazon Bedrock Checks (13)
 
 ### Access Control
 
@@ -114,7 +114,6 @@ Each security check has a unique identifier with a service prefix:
 | BR-03 | Marketplace Subscription Access | Checks for overly permissive marketplace subscription access | Medium |
 | BR-08 | Agent AWS IAM Configuration | Checks agent execution role permissions | Medium |
 | BR-10 | Guardrail AWS IAM Enforcement | Verifies guardrails are enforced via AWS IAM conditions | Medium |
-| BR-14 | Stale Access | Detects unused Bedrock API permissions | Low |
 
 ### Network Security
 

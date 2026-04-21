@@ -5,8 +5,9 @@ This module provides a unified report generation function used by both:
 - Single-account Lambda (app.py)
 - Multi-account CodeBuild consolidation (consolidate_html_reports.py)
 """
+
 from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional
 
 
 def generate_table_rows(findings: List[Dict], include_data_attrs: bool = True) -> str:
@@ -22,29 +23,39 @@ def generate_table_rows(findings: List[Dict], include_data_attrs: bool = True) -
     """
     rows = []
     for finding in findings:
-        severity = finding.get('severity', finding.get('Severity', 'Informational')).lower()
-        severity_class = severity if severity in ['high', 'medium', 'low'] else 'na'
-        status = finding.get('status', finding.get('Status', '')).lower()
-        status_class = 'passed' if status == 'passed' else 'na' if status == 'n/a' else 'failed'
-        service = finding.get('_service', 'bedrock')
-        account_id = finding.get('account_id', finding.get('Account_ID', ''))
-        check_id = finding.get('check_id', finding.get('Check_ID', ''))
-        finding_name = finding.get('finding', finding.get('Finding', ''))
-        details = finding.get('details', finding.get('Finding_Details', ''))
-        resolution = finding.get('resolution', finding.get('Resolution', ''))
-        ref = finding.get('reference', finding.get('Reference', ''))
+        severity = finding.get(
+            "severity", finding.get("Severity", "Informational")
+        ).lower()
+        severity_class = severity if severity in ["high", "medium", "low"] else "na"
+        status = finding.get("status", finding.get("Status", "")).lower()
+        status_class = (
+            "passed" if status == "passed" else "na" if status == "n/a" else "failed"
+        )
+        service = finding.get("_service", "bedrock")
+        account_id = finding.get("account_id", finding.get("Account_ID", ""))
+        check_id = finding.get("check_id", finding.get("Check_ID", ""))
+        finding_name = finding.get("finding", finding.get("Finding", ""))
+        details = finding.get("details", finding.get("Finding_Details", ""))
+        resolution = finding.get("resolution", finding.get("Resolution", ""))
+        ref = finding.get("reference", finding.get("Reference", ""))
 
-        if ref and ref.strip() and ref.strip() != '-':
+        if ref and ref.strip() and ref.strip() != "-":
             ref_html = f'''<a href="{ref}" target="_blank" class="reference-btn" title="View AWS Documentation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>'''
         else:
             ref_html = '<span style="color: var(--text-3);">-</span>'
 
-        data_attrs = f'data-service="{service}" data-severity="{severity}" data-status="{status}" data-account="{account_id}"' if include_data_attrs else ''
+        data_attrs = (
+            f'data-service="{service}" data-severity="{severity}" data-status="{status}" data-account="{account_id}"'
+            if include_data_attrs
+            else ""
+        )
 
-        severity_display = finding.get('severity', finding.get('Severity', 'Informational'))
-        status_display = finding.get('status', finding.get('Status', ''))
+        severity_display = finding.get(
+            "severity", finding.get("Severity", "Informational")
+        )
+        status_display = finding.get("status", finding.get("Status", ""))
 
-        row = f'''<tr {data_attrs}>
+        row = f"""<tr {data_attrs}>
             <td><code>{account_id}</code></td>
             <td><code>{check_id}</code></td>
             <td class="col-domain">{finding_name}</td>
@@ -52,11 +63,15 @@ def generate_table_rows(findings: List[Dict], include_data_attrs: bool = True) -
             <td class="resolution-text">{resolution}</td>
             <td class="reference-cell">{ref_html}</td>
             <td><span class="severity {severity_class}">{severity_display}</span></td>
-            <td><span class="status {'success' if status_class == 'passed' else 'error' if status_class == 'failed' else 'warning'}">{status_display}</span></td>
-        </tr>'''
+            <td><span class="status {"success" if status_class == "passed" else "error" if status_class == "failed" else "warning"}">{status_display}</span></td>
+        </tr>"""
         rows.append(row)
 
-    return '\n'.join(rows) if rows else '<tr><td colspan="8" style="text-align: center; padding: 40px; color: var(--text-3);">No findings to display</td></tr>'
+    return (
+        "\n".join(rows)
+        if rows
+        else '<tr><td colspan="8" style="text-align: center; padding: 40px; color: var(--text-3);">No findings to display</td></tr>'
+    )
 
 
 def get_html_template() -> str:
@@ -65,7 +80,7 @@ def get_html_template() -> str:
 
     This is a single source of truth for the report HTML/CSS/JS.
     """
-    return '''<!DOCTYPE html>
+    return """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -540,17 +555,17 @@ def get_html_template() -> str:
         applyFilters();
     </script>
 </body>
-</html>'''
+</html>"""
 
 
 def generate_html_report(
     all_findings: List[Dict],
     service_findings: Dict[str, List[Dict]],
     service_stats: Dict[str, Dict[str, int]],
-    mode: str = 'single',
+    mode: str = "single",
     account_id: Optional[str] = None,
     account_ids: Optional[List[str]] = None,
-    timestamp: Optional[str] = None
+    timestamp: Optional[str] = None,
 ) -> str:
     """
     Generate HTML report from findings data.
@@ -569,119 +584,208 @@ def generate_html_report(
     """
     # Calculate metrics
     total_findings = len(all_findings)  # All findings including N/A for table display
-    unique_check_ids = set(f.get('check_id', f.get('Check_ID', '')) for f in all_findings)
+    unique_check_ids = set(
+        f.get("check_id", f.get("Check_ID", "")) for f in all_findings
+    )
     security_checks = len(unique_check_ids)  # Unique security controls evaluated
-    high_count = sum(1 for f in all_findings if f.get('severity', f.get('Severity', '')).lower() == 'high')
-    medium_count = sum(1 for f in all_findings if f.get('severity', f.get('Severity', '')).lower() == 'medium')
-    low_count = sum(1 for f in all_findings if f.get('severity', f.get('Severity', '')).lower() == 'low')
-    actionable_findings = high_count + medium_count + low_count  # Only High/Medium/Low severity
+    high_count = sum(
+        1
+        for f in all_findings
+        if f.get("severity", f.get("Severity", "")).lower() == "high"
+    )
+    medium_count = sum(
+        1
+        for f in all_findings
+        if f.get("severity", f.get("Severity", "")).lower() == "medium"
+    )
+    low_count = sum(
+        1
+        for f in all_findings
+        if f.get("severity", f.get("Severity", "")).lower() == "low"
+    )
+    actionable_findings = (
+        high_count + medium_count + low_count
+    )  # Only High/Medium/Low severity
 
     # Severity-specific pass rates
-    high_passed = sum(1 for f in all_findings if f.get('severity', f.get('Severity', '')).lower() == 'high' and f.get('status', f.get('Status', '')).lower() == 'passed')
-    medium_passed = sum(1 for f in all_findings if f.get('severity', f.get('Severity', '')).lower() == 'medium' and f.get('status', f.get('Status', '')).lower() == 'passed')
-    low_passed = sum(1 for f in all_findings if f.get('severity', f.get('Severity', '')).lower() == 'low' and f.get('status', f.get('Status', '')).lower() == 'passed')
+    high_passed = sum(
+        1
+        for f in all_findings
+        if f.get("severity", f.get("Severity", "")).lower() == "high"
+        and f.get("status", f.get("Status", "")).lower() == "passed"
+    )
+    medium_passed = sum(
+        1
+        for f in all_findings
+        if f.get("severity", f.get("Severity", "")).lower() == "medium"
+        and f.get("status", f.get("Status", "")).lower() == "passed"
+    )
+    low_passed = sum(
+        1
+        for f in all_findings
+        if f.get("severity", f.get("Severity", "")).lower() == "low"
+        and f.get("status", f.get("Status", "")).lower() == "passed"
+    )
     passed_count = high_passed + medium_passed + low_passed
-    pass_rate = round((passed_count / actionable_findings * 100), 1) if actionable_findings > 0 else 0
+    pass_rate = (
+        round((passed_count / actionable_findings * 100), 1)
+        if actionable_findings > 0
+        else 0
+    )
     high_pass_rate = round((high_passed / high_count * 100), 1) if high_count > 0 else 0
-    medium_pass_rate = round((medium_passed / medium_count * 100), 1) if medium_count > 0 else 0
+    medium_pass_rate = (
+        round((medium_passed / medium_count * 100), 1) if medium_count > 0 else 0
+    )
     low_pass_rate = round((low_passed / low_count * 100), 1) if low_count > 0 else 0
 
     # Timestamp handling
     if not timestamp:
-        timestamp = datetime.now(timezone.utc).strftime('%B %d, %Y %H:%M:%S UTC')
-    date_display = datetime.now(timezone.utc).strftime('%B %d, %Y')
+        timestamp = datetime.now(timezone.utc).strftime("%B %d, %Y %H:%M:%S UTC")
+    date_display = datetime.now(timezone.utc).strftime("%B %d, %Y")
 
     # Build priority alerts
-    high_priority = [f for f in all_findings if f.get('severity', f.get('Severity', '')).lower() == 'high' and f.get('status', f.get('Status', '')).lower() == 'failed']
-    medium_priority = [f for f in all_findings if f.get('severity', f.get('Severity', '')).lower() == 'medium' and f.get('status', f.get('Status', '')).lower() == 'failed']
+    high_priority = [
+        f
+        for f in all_findings
+        if f.get("severity", f.get("Severity", "")).lower() == "high"
+        and f.get("status", f.get("Status", "")).lower() == "failed"
+    ]
+    medium_priority = [
+        f
+        for f in all_findings
+        if f.get("severity", f.get("Severity", "")).lower() == "medium"
+        and f.get("status", f.get("Status", "")).lower() == "failed"
+    ]
 
     alerts_html = ""
     alert_groups = {}
     for f in high_priority[:4]:
-        key = f.get('finding', f.get('Finding', ''))
+        key = f.get("finding", f.get("Finding", ""))
         if key not in alert_groups:
-            alert_groups[key] = {'count': 0, 'finding': f}
-        alert_groups[key]['count'] += 1
+            alert_groups[key] = {"count": 0, "finding": f}
+        alert_groups[key]["count"] += 1
 
     for key, data in list(alert_groups.items())[:3]:
-        f = data['finding']
-        service_name = 'Bedrock' if f.get('_service') == 'bedrock' else 'SageMaker' if f.get('_service') == 'sagemaker' else 'AgentCore'
-        alerts_html += f'''<div class="alert-item critical">
-            <div class="alert-count">{data['count']}</div>
+        f = data["finding"]
+        service_name = (
+            "Bedrock"
+            if f.get("_service") == "bedrock"
+            else "SageMaker"
+            if f.get("_service") == "sagemaker"
+            else "AgentCore"
+        )
+        alerts_html += f"""<div class="alert-item critical">
+            <div class="alert-count">{data["count"]}</div>
             <div class="alert-info">
-                <div class="alert-domain">{f.get('finding', f.get('Finding', ''))}</div>
+                <div class="alert-domain">{f.get("finding", f.get("Finding", ""))}</div>
                 <div class="alert-category">{service_name}</div>
             </div>
-        </div>'''
+        </div>"""
 
     for f in medium_priority[:1]:
-        service_name = 'Bedrock' if f.get('_service') == 'bedrock' else 'SageMaker' if f.get('_service') == 'sagemaker' else 'AgentCore'
-        alerts_html += f'''<div class="alert-item warning">
+        service_name = (
+            "Bedrock"
+            if f.get("_service") == "bedrock"
+            else "SageMaker"
+            if f.get("_service") == "sagemaker"
+            else "AgentCore"
+        )
+        alerts_html += f"""<div class="alert-item warning">
             <div class="alert-count">1</div>
             <div class="alert-info">
-                <div class="alert-domain">{f.get('finding', f.get('Finding', ''))}</div>
+                <div class="alert-domain">{f.get("finding", f.get("Finding", ""))}</div>
                 <div class="alert-category">{service_name}</div>
             </div>
-        </div>'''
+        </div>"""
 
     if not alerts_html:
         alerts_html = '<div class="alert-item"><div class="alert-info"><div class="alert-domain">No critical findings</div></div></div>'
 
     # Generate table rows
     all_rows = generate_table_rows(all_findings, include_data_attrs=True)
-    bedrock_rows = generate_table_rows(service_findings.get('bedrock', []), include_data_attrs=True)
-    sagemaker_rows = generate_table_rows(service_findings.get('sagemaker', []), include_data_attrs=True)
-    agentcore_rows = generate_table_rows(service_findings.get('agentcore', []), include_data_attrs=True)
+    bedrock_rows = generate_table_rows(
+        service_findings.get("bedrock", []), include_data_attrs=True
+    )
+    sagemaker_rows = generate_table_rows(
+        service_findings.get("sagemaker", []), include_data_attrs=True
+    )
+    agentcore_rows = generate_table_rows(
+        service_findings.get("agentcore", []), include_data_attrs=True
+    )
 
     # Mode-specific content
     num_accounts = len(account_ids) if account_ids else 1
-    if mode == 'multi':
-        title = 'Multi-Account AI/ML Security Assessment Report'
-        sidebar_subtitle = 'Multi-Account Assessment'
-        account_info = f'Accounts: {num_accounts}'
-        header_account_info = f'{num_accounts} Accounts'
-        findings_sub = f'Across {num_accounts} accounts'
-        account_options = ''.join([f'<option value="{acc}">{acc}</option>' for acc in sorted(account_ids or [])])
+    if mode == "multi":
+        title = "Multi-Account AI/ML Security Assessment Report"
+        sidebar_subtitle = "Multi-Account Assessment"
+        account_info = f"Accounts: {num_accounts}"
+        header_account_info = f"{num_accounts} Accounts"
+        findings_sub = f"Across {num_accounts} accounts"
+        account_options = "".join(
+            [
+                f'<option value="{acc}">{acc}</option>'
+                for acc in sorted(account_ids or [])
+            ]
+        )
         account_filter = f'<div class="filter-group"><label>Account</label><select id="accountFilter"><option value="">All Accounts</option>{account_options}</select></div>'
         bedrock_account_filter = f'<div class="filter-group"><label>Account</label><select id="bedrockAccountFilter"><option value="">All Accounts</option>{account_options}</select></div>'
         sagemaker_account_filter = f'<div class="filter-group"><label>Account</label><select id="sagemakerAccountFilter"><option value="">All Accounts</option>{account_options}</select></div>'
         agentcore_account_filter = f'<div class="filter-group"><label>Account</label><select id="agentcoreAccountFilter"><option value="">All Accounts</option>{account_options}</select></div>'
 
         # Calculate per-account risk metrics
-        account_metrics_html = ''
+        account_metrics_html = ""
         for acc_id in sorted(account_ids or []):
-            acc_findings = [f for f in all_findings if f.get('account_id', f.get('Account_ID', '')) == acc_id]
-            acc_high = sum(1 for f in acc_findings if f.get('severity', f.get('Severity', '')).lower() == 'high' and f.get('status', f.get('Status', '')).lower() == 'failed')
-            acc_medium = sum(1 for f in acc_findings if f.get('severity', f.get('Severity', '')).lower() == 'medium' and f.get('status', f.get('Status', '')).lower() == 'failed')
-            acc_low = sum(1 for f in acc_findings if f.get('severity', f.get('Severity', '')).lower() == 'low' and f.get('status', f.get('Status', '')).lower() == 'failed')
+            acc_findings = [
+                f
+                for f in all_findings
+                if f.get("account_id", f.get("Account_ID", "")) == acc_id
+            ]
+            acc_high = sum(
+                1
+                for f in acc_findings
+                if f.get("severity", f.get("Severity", "")).lower() == "high"
+                and f.get("status", f.get("Status", "")).lower() == "failed"
+            )
+            acc_medium = sum(
+                1
+                for f in acc_findings
+                if f.get("severity", f.get("Severity", "")).lower() == "medium"
+                and f.get("status", f.get("Status", "")).lower() == "failed"
+            )
+            acc_low = sum(
+                1
+                for f in acc_findings
+                if f.get("severity", f.get("Severity", "")).lower() == "low"
+                and f.get("status", f.get("Status", "")).lower() == "failed"
+            )
             acc_total_failed = acc_high + acc_medium + acc_low
 
             # Determine risk level color
             if acc_high > 0:
-                risk_class = 'danger'
-                border_color = 'var(--danger)'
+                risk_class = "danger"
+                border_color = "var(--danger)"
             elif acc_medium > 0:
-                risk_class = 'warning'
-                border_color = 'var(--warning)'
+                risk_class = "warning"
+                border_color = "var(--warning)"
             else:
-                risk_class = ''
-                border_color = 'var(--success)'
+                risk_class = ""
+                border_color = "var(--success)"
 
-            account_metrics_html += f'''<div class="metric {risk_class}" style="border-left: 3px solid {border_color};"><div class="metric-label" style="font-family: \'JetBrains Mono\', monospace; font-size: 12px;">{acc_id}</div><div class="metric-value">{acc_total_failed}</div><div class="metric-sub"><span style="color: var(--danger);">{acc_high} High</span> · <span style="color: var(--warning);">{acc_medium} Med</span> · <span style="color: var(--accent);">{acc_low} Low</span></div></div>'''
+            account_metrics_html += f"""<div class="metric {risk_class}" style="border-left: 3px solid {border_color};"><div class="metric-label" style="font-family: \'JetBrains Mono\', monospace; font-size: 12px;">{acc_id}</div><div class="metric-value">{acc_total_failed}</div><div class="metric-sub"><span style="color: var(--danger);">{acc_high} High</span> · <span style="color: var(--warning);">{acc_medium} Med</span> · <span style="color: var(--accent);">{acc_low} Low</span></div></div>"""
 
-        account_risk_section = f'''<h4 style="font-size: 14px; font-weight: 600; color: var(--text-2); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Risk by Account</h4>
-                <div class="metrics" style="margin-bottom: 32px;">{account_metrics_html}</div>'''
+        account_risk_section = f"""<h4 style="font-size: 14px; font-weight: 600; color: var(--text-2); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Risk by Account</h4>
+                <div class="metrics" style="margin-bottom: 32px;">{account_metrics_html}</div>"""
     else:
-        title = 'AI/ML Security Assessment Report'
-        sidebar_subtitle = 'Assessment Report'
-        account_info = f'Account: {account_id or "Unknown"}'
-        header_account_info = f'Account: {account_id or "Unknown"}'
-        findings_sub = 'Across 1 account'
-        account_filter = ''
-        bedrock_account_filter = ''
-        sagemaker_account_filter = ''
-        agentcore_account_filter = ''
-        account_risk_section = ''
+        title = "AI/ML Security Assessment Report"
+        sidebar_subtitle = "Assessment Report"
+        account_info = f"Account: {account_id or 'Unknown'}"
+        header_account_info = f"Account: {account_id or 'Unknown'}"
+        findings_sub = "Across 1 account"
+        account_filter = ""
+        bedrock_account_filter = ""
+        sagemaker_account_filter = ""
+        agentcore_account_filter = ""
+        account_risk_section = ""
 
     # Fill template
     html_template = get_html_template()
@@ -710,15 +814,21 @@ def generate_html_report(
         high_pass_rate=high_pass_rate,
         medium_pass_rate=medium_pass_rate,
         low_pass_rate=low_pass_rate,
-        bedrock_total=service_stats.get('bedrock', {}).get('passed', 0) + service_stats.get('bedrock', {}).get('failed', 0),
-        bedrock_failed=service_stats.get('bedrock', {}).get('failed', 0),
-        bedrock_passed=service_stats.get('bedrock', {}).get('passed', 0),
-        sagemaker_total=service_stats.get('sagemaker', {}).get('passed', 0) + service_stats.get('sagemaker', {}).get('failed', 0),
-        sagemaker_failed=service_stats.get('sagemaker', {}).get('failed', 0),
-        sagemaker_passed=service_stats.get('sagemaker', {}).get('passed', 0),
-        agentcore_total=service_stats.get('agentcore', {}).get('passed', 0) + service_stats.get('agentcore', {}).get('failed', 0),
-        agentcore_failed=service_stats.get('agentcore', {}).get('failed', 0),
-        agentcore_passed=service_stats.get('agentcore', {}).get('passed', 0),
+        bedrock_total=service_stats.get("bedrock", {}).get("passed", 0)
+        + service_stats.get("bedrock", {}).get("failed", 0)
+        + service_stats.get("bedrock", {}).get("na", 0),
+        bedrock_failed=service_stats.get("bedrock", {}).get("failed", 0),
+        bedrock_passed=service_stats.get("bedrock", {}).get("passed", 0),
+        sagemaker_total=service_stats.get("sagemaker", {}).get("passed", 0)
+        + service_stats.get("sagemaker", {}).get("failed", 0)
+        + service_stats.get("sagemaker", {}).get("na", 0),
+        sagemaker_failed=service_stats.get("sagemaker", {}).get("failed", 0),
+        sagemaker_passed=service_stats.get("sagemaker", {}).get("passed", 0),
+        agentcore_total=service_stats.get("agentcore", {}).get("passed", 0)
+        + service_stats.get("agentcore", {}).get("failed", 0)
+        + service_stats.get("agentcore", {}).get("na", 0),
+        agentcore_failed=service_stats.get("agentcore", {}).get("failed", 0),
+        agentcore_passed=service_stats.get("agentcore", {}).get("passed", 0),
         alerts=alerts_html,
         all_rows=all_rows,
         bedrock_rows=bedrock_rows,
@@ -727,5 +837,5 @@ def generate_html_report(
         bedrock_account_filter=bedrock_account_filter,
         sagemaker_account_filter=sagemaker_account_filter,
         agentcore_account_filter=agentcore_account_filter,
-        account_risk_section=account_risk_section
+        account_risk_section=account_risk_section,
     )

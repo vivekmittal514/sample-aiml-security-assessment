@@ -1,0 +1,37 @@
+bedrock:
+  - changed-files:
+    - any-glob-to-any-file: 'aiml-security-assessment/functions/security/bedrock_assessments/**'
+
+sagemaker:
+  - changed-files:
+    - any-glob-to-any-file: 'aiml-security-assessment/functions/security/sagemaker_assessments/**'
+
+agentcore:
+  - changed-files:
+    - any-glob-to-any-file: 'aiml-security-assessment/functions/security/agentcore_assessments/**'
+
+report:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'aiml-security-assessment/functions/security/generate_consolidated_report/**'
+      - 'consolidate_html_reports.py'
+
+deployment:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'deployment/**'
+      - 'aiml-security-assessment/template*.yaml'
+      - 'buildspec*.yml'
+
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'docs/**'
+      - '*.md'
+      - 'sample-reports/**'
+
+infrastructure:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'aiml-security-assessment/statemachine/**'
+      - 'aiml-security-assessment/template*.yaml'

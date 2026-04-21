@@ -1,0 +1,13 @@
+configure_rules:
+  W3037:
+    # cfn-lint's IAM action database doesn't include newer services yet.
+    # These are valid IAM actions used by the assessment framework.
+    strict: false
+
+ignore_checks:
+  # W3037: IAM action not recognized - cfn-lint's action database lags behind
+  # newer AWS services (bedrock-agent, bedrock-agentcore, s3:GetBucketEncryption, s3:HeadBucket)
+  - W3037
+  # W1030: Parameter default/constraint mismatch - CodeBuildTimeout has MinValue/MaxValue
+  # constraints that cfn-lint incorrectly flags when Ref is used
+  - W1030
