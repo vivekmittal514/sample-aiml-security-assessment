@@ -4,7 +4,7 @@
 
 > **Open-source automated security scanner for Amazon Bedrock, SageMaker AI, and Bedrock AgentCore** - Built on [AWS Well-Architected Framework (Generative AI Lens)](https://docs.aws.amazon.com/wellarchitected/latest/generative-ai-lens/generative-ai-lens.html)
 
-Cloud security automation with **52 security checks** for your generative AI and machine learning workloads. Identify IAM misconfigurations, encryption gaps, network isolation issues, and compliance violations with interactive HTML reports and actionable remediation guidance.
+Cloud security automation with **51 security checks** for your generative AI and machine learning workloads. Identify IAM misconfigurations, encryption gaps, network isolation issues, and compliance violations with interactive HTML reports and actionable remediation guidance.
 
 ---
 
@@ -43,7 +43,7 @@ The framework generates professional, interactive security assessment reports wi
 
 - **Executive Summary** with severity counts and service breakdown
 - **Priority Recommendations** highlighting critical issues requiring immediate attention
-- **52 Security Checks** across Amazon Bedrock, SageMaker AI, and Bedrock AgentCore
+- **51 Security Checks** across Amazon Bedrock, SageMaker AI, and Bedrock AgentCore
 - **Interactive Filtering** by account, service, severity, and status
 - **Light/Dark Mode Toggle** with persistent user preference
 - **Text Search** across all findings with real-time results
@@ -85,14 +85,14 @@ Designed for workloads using [Amazon Bedrock](https://aws.amazon.com/bedrock/), 
 | Challenge | How This Framework Helps |
 |-----------|-------------------------|
 | **Manual security audits are time-consuming** | Fully automated scanning with one-click CloudFormation deployment |
-| **Inconsistent security checks across teams** | Standardized 52-check assessment based on AWS Well-Architected best practices |
+| **Inconsistent security checks across teams** | Standardized 51-check assessment based on AWS Well-Architected best practices |
 | **Difficulty tracking AI/ML security posture** | Interactive HTML dashboards with severity breakdown and trend visibility |
 | **Multi-account complexity** | Consolidated reporting across AWS Organizations with cross-account role assumption |
 | **Compliance and audit requirements** | Exportable reports with remediation guidance linked to AWS documentation |
 | **Generative AI security gaps** | Purpose-built checks for LLM guardrails, model access controls, and prompt injection prevention |
 
 **Services Covered:**
-- **Amazon Bedrock** (14 checks) - Guardrails, encryption, Amazon VPC endpoints, AWS IAM permissions, model invocation logging
+- **Amazon Bedrock** (13 checks) - Guardrails, encryption, Amazon VPC endpoints, AWS IAM permissions, model invocation logging
 - **Amazon SageMaker AI** (25 checks) - Security Hub controls (SageMaker.1-5), encryption, network isolation, AWS IAM, MLOps
 - **Amazon Bedrock AgentCore** (13 checks) - Amazon VPC configuration, encryption, observability, resource policies
 
@@ -489,9 +489,24 @@ For a clean removal, delete resources in this order:
 
 | Document | Description |
 |----------|-------------|
-| [Security Checks Reference](docs/SECURITY_CHECKS.md) | Complete reference for all 52 security checks with severity levels |
+| [Security Checks Reference](docs/SECURITY_CHECKS.md) | Complete reference for all 51 security checks with severity levels |
 | [Troubleshooting Guide](docs/TROUBLESHOOTING.md) | Common issues, debugging tips, and FAQ |
 | [Developer Guide](docs/DEVELOPER_GUIDE.md) | Architecture details, adding custom checks, and contributing |
+
+---
+
+## CI/CD
+
+GitHub Actions workflows run automatically on pull requests and pushes to `main`:
+
+| Workflow | Trigger | What It Checks |
+|----------|---------|----------------|
+| **Python Code Quality** | PR | Runs `ruff check` and `ruff format --check` on changed Python files |
+| **CloudFormation Lint** | PR | Validates deployment and SAM templates with `cfn-lint` |
+| **SAM Validate & Build** | PR | Runs `sam validate --lint` and `sam build` on SAM templates |
+| **ASH Security Scan** | PR | Scans changed files for secrets, dependency vulnerabilities, and IaC misconfigurations |
+| **CodeQL** | PR, push, weekly | GitHub semantic code analysis for Python |
+| **ASH Full Repository Scan** | Push to main, monthly | Full repository security scan with results uploaded as artifacts |
 
 ---
 

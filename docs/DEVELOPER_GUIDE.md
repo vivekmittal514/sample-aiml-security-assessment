@@ -34,6 +34,9 @@
 - [Documentation and Screenshots](#documentation-and-screenshots)
   - [Updating Sample Reports](#updating-sample-reports)
   - [Documentation Best Practices](#documentation-best-practices)
+- [CI/CD Workflows](#cicd-workflows)
+  - [PR Checks](#pr-checks)
+  - [Running Checks Locally](#running-checks-locally)
 - [Support and Resources](#support-and-resources)
   - [Documentation](#documentation)
 
@@ -41,7 +44,7 @@
 
 ## Architecture Overview
 
-The AI/ML Security Assessment Framework is a serverless, multi-account security assessment solution for AWS AI/ML workloads. It performs 52 security checks across Amazon Bedrock, Amazon SageMaker AI, and Amazon Bedrock AgentCore, generating interactive HTML reports with findings and remediation guidance.
+The AI/ML Security Assessment Framework is a serverless, multi-account security assessment solution for AWS AI/ML workloads. It performs 51 security checks across Amazon Bedrock, Amazon SageMaker AI, and Amazon Bedrock AgentCore, generating interactive HTML reports with findings and remediation guidance.
 
 ### Security Design Principles
 
@@ -480,7 +483,7 @@ For detailed troubleshooting guidance, common issues, and debugging tips, see th
 ## Development Roadmap
 
 ### Current Status
-- **AI/ML Assessment**: 52 security checks across three services (see [Security Checks Reference](SECURITY_CHECKS.md))
+- **AI/ML Assessment**: 51 security checks across three services (see [Security Checks Reference](SECURITY_CHECKS.md))
 
 ### Potential Additions
 - **Amazon Comprehend**: Data privacy, access controls, entity recognition security
@@ -647,6 +650,52 @@ After generating new screenshots, update the README to reference them:
 - **Update both HTML and screenshots** when making UI changes
 - **Test screenshots render correctly** in GitHub's markdown preview
 - **All screenshot tooling**: Located in `sample-reports/` for easy organization
+
+## CI/CD Workflows
+
+GitHub Actions workflows run automatically to validate code quality and security on every pull request.
+
+### PR Checks
+
+| Workflow | File | What It Checks |
+|----------|------|----------------|
+| **Python Code Quality** | `.github/workflows/python-lint.yml` | `ruff check` (lint) and `ruff format --check` (formatting) on changed `.py` files |
+| **CloudFormation Lint** | `.github/workflows/cfn-lint.yml` | Validates deployment and SAM templates with `cfn-lint` |
+| **SAM Validate & Build** | `.github/workflows/sam-validate.yml` | Runs `sam validate --lint` and `sam build` on SAM templates |
+| **ASH Security Scan** | `.github/workflows/ash-security-scan.yml` | Scans changed files for secrets, dependency vulnerabilities, and IaC misconfigurations |
+| **CodeQL** | `.github/workflows/codeql.yml` | GitHub semantic code analysis for Python |
+
+Additional workflows run post-merge or on schedule:
+
+| Workflow | File | Trigger |
+|----------|------|---------|
+| **ASH Full Repository Scan** | `.github/workflows/ash-full-repository-scan.yml` | Push to main, monthly schedule, manual |
+| **Labeler** | `.github/workflows/label.yml` | Auto-labels PRs by changed paths (bedrock, sagemaker, agentcore, deployment, docs) |
+
+cfn-lint suppressions are configured in `.cfnlintrc` at the repository root for IAM actions not yet in cfn-lint's database (e.g., `bedrock-agentcore` actions).
+
+### Running Checks Locally
+
+Before pushing, run these checks locally to catch issues early:
+
+```bash
+# Install tools
+pip install ruff cfn-lint
+
+# Python lint and format
+ruff check aiml-security-assessment/functions/security/
+ruff format --check aiml-security-assessment/functions/security/
+
+# CloudFormation lint
+cfn-lint deployment/*.yaml
+cfn-lint aiml-security-assessment/template.yaml
+cfn-lint aiml-security-assessment/template-multi-account.yaml
+
+# SAM validate and build
+cd aiml-security-assessment
+sam validate --template template.yaml --lint
+sam build --template template.yaml
+```
 
 ## Support and Resources
 

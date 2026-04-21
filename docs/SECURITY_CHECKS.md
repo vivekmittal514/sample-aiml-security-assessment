@@ -1,6 +1,6 @@
 # Security Checks Reference
 
-This document provides a comprehensive reference for all 52 security checks performed by the AI/ML Security Assessment framework.
+This document provides a comprehensive reference for all 51 security checks performed by the AI/ML Security Assessment framework.
 
 ## Table of Contents
 
