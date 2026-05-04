@@ -13,6 +13,7 @@ import json
 from schema import create_finding
 
 # Configure boto3 with retries
+# CI trigger test - this comment will be removed after CI validation
 boto3_config = Config(
     retries=dict(
         max_attempts=10,  # Maximum number of retries
