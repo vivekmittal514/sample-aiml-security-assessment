@@ -340,6 +340,63 @@ class TestAC06BrowserToolRecording:
         for f in extract_csv_data(result):
             assert_finding_schema(f)
 
+    def test_ac06_all_paths_use_consistent_name_and_reference(self):
+        findings = []
+
+        with patch("agentcore_app.agentcore_client", None):
+            findings.extend(agentcore_app.check_browser_tool_recording())
+
+        inventories = [
+            {
+                "items": [],
+                "errors": [],
+                "list_error": RuntimeError("list failed"),
+            },
+            {"items": [], "errors": [], "list_error": None},
+            {
+                "items": [
+                    {
+                        "summary": {"browserId": "br-1", "name": "browser-1"},
+                        "detail": {
+                            "recording": {
+                                "enabled": True,
+                                "s3Location": {"bucket": "recordings"},
+                            }
+                        },
+                    }
+                ],
+                "errors": [],
+                "list_error": None,
+            },
+            {
+                "items": [],
+                "errors": [
+                    {
+                        "summary": {"browserId": "br-2", "name": "browser-2"},
+                        "error": RuntimeError("detail failed"),
+                    }
+                ],
+                "list_error": None,
+            },
+        ]
+        with patch("agentcore_app.agentcore_client", MagicMock()):
+            for inventory in inventories:
+                findings.extend(agentcore_app.check_browser_tool_recording(inventory))
+
+            broken_inventory = MagicMock()
+            broken_inventory.get.side_effect = RuntimeError("inventory failed")
+            findings.extend(
+                agentcore_app.check_browser_tool_recording(broken_inventory)
+            )
+
+        assert findings
+        assert {finding["Finding"] for finding in findings} == {
+            "AgentCore Browser Session Recording"
+        }
+        assert {finding["Reference"] for finding in findings} == {
+            agentcore_app.AGENTCORE_SECURITY_HUB_REFERENCE_URL
+        }
+
 
 # ===================================================================
 # AC-07: check_agentcore_memory_configuration
@@ -1033,6 +1090,29 @@ class TestProposedAgentCoreChecks:
         finding = agentcore_app.check_agentcore_token_vault_encryption()[0]
         assert finding["Check_ID"] == "AC-14"
         assert finding["Status"] == "Passed"
+
+    @patch.dict(
+        os.environ,
+        {"AGENTCORE_TOKEN_VAULT_ID": "team-security-vault"},
+        clear=False,
+    )
+    @patch("agentcore_app.agentcore_client")
+    def test_ac14_uses_configured_non_default_token_vault(self, mock_ac):
+        mock_ac.get_token_vault.return_value = {
+            "tokenVaultId": "team-security-vault",
+            "kmsConfiguration": {
+                "keyType": "CustomerManagedKey",
+                "kmsKeyArn": "arn:aws:kms:us-east-1:123456789012:key/key-2",
+            },
+        }
+
+        finding = agentcore_app.check_agentcore_token_vault_encryption()[0]
+
+        mock_ac.get_token_vault.assert_called_once_with(
+            tokenVaultId="team-security-vault"
+        )
+        assert finding["Status"] == "Passed"
+        assert "team-security-vault" in finding["Finding_Details"]
 
     @patch("agentcore_app.agentcore_client")
     def test_ac14_service_managed_token_vault_fails(self, mock_ac):

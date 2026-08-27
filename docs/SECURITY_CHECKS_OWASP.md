@@ -105,12 +105,17 @@ Maps from:
 | Source | Signal |
 | -------- | -------- |
 | BR-26 | Guardrail PII / regex filter policy |
+| BR-37 | Bedrock account data retention and provider-sharing boundary |
+| BR-38 | Automated Reasoning policies use customer-managed KMS encryption |
+| BR-40 | Marketplace model endpoints use customer-managed KMS encryption |
+| AC-14 | AgentCore Identity token vault uses customer-managed KMS encryption |
 | FS-43 | CloudWatch log data protection policies |
 | FS-44 | Amazon Macie sensitive-data discovery |
 | FS-45 | Guardrail PII entities coverage (Responsible AI GRC) |
 | FS-46 | S3 data-classification tagging |
 | SM-03 | SageMaker notebooks, domains, and training jobs use encryption controls |
 | SM-15 | SageMaker Feature Store offline stores use KMS encryption |
+| SM-27 | HyperPod root and secondary EBS volumes use customer-managed KMS encryption |
 
 ### LLM03 Supply Chain — OW-03
 
@@ -120,6 +125,7 @@ Maps from:
 | -------- | -------- |
 | BR-30 | Imported-model KMS encryption |
 | BR-33 | Amazon Inspector Lambda code scanning (§2.5 SBOM / static analysis) |
+| BR-39 | Marketplace model endpoints use controlled VPC network boundaries |
 | FS-12 | SCP-enforced model allowlist |
 | FS-13 | Custom-model provenance tags |
 | FS-14 | AWS Config rules for model onboarding |
@@ -131,6 +137,8 @@ Maps from:
 | SM-14 | SageMaker models pull containers through controlled repository access |
 | SM-21 | SageMaker AutoML jobs use network isolation |
 | SM-25 | SageMaker Experiments and lineage associations track model provenance |
+| SM-28 | HyperPod instance groups use controlled VPC network boundaries |
+| SM-30 | Model Registry resource policies restrict public and unapproved cross-account access |
 
 ### LLM04 Data and Model Poisoning — OW-04
 
@@ -171,6 +179,7 @@ Maps from:
 | AC-02 | AgentCore IAM least privilege |
 | AC-10 | AgentCore resource-based policies |
 | AC-15 | AgentCore custom Code Interpreter VPC isolation |
+| AC-16 | AgentCore custom browser VPC isolation |
 | FS-07 | Agent execution role least privilege (Responsible AI GRC) |
 | FS-08 | AgentCore runtime inbound authorizer (Responsible AI GRC) |
 | FS-09 | Agent tool concurrency limits |

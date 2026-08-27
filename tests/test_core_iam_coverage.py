@@ -8,6 +8,7 @@ import pytest
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 _INSPECTOR_ACTIONS = {"inspector2:BatchGetAccountStatus"}  # BR-33
+_KMS_ACTIONS = {"kms:DescribeKey"}  # BR-40
 
 
 _SECTION_CHECKS = [
@@ -23,6 +24,7 @@ _SECTION_CHECKS = [
             "bedrock:ListImportedModels",  # BR-30
             "bedrock:GetImportedModel",  # BR-30
             "bedrock:ListModelInvocationJobs",  # BR-31
+            "kms:DescribeKey",  # BR-40
             "servicequotas:ListServiceQuotas",  # BR-22
             "servicequotas:GetServiceQuota",  # BR-22
             "servicequotas:GetAWSDefaultServiceQuota",  # BR-22
@@ -51,6 +53,7 @@ _SECTION_CHECKS = [
             "bedrock:ListImportedModels",  # BR-30
             "bedrock:GetImportedModel",  # BR-30
             "bedrock:ListModelInvocationJobs",  # BR-31
+            "kms:DescribeKey",  # BR-40
             "servicequotas:ListServiceQuotas",  # BR-22
             "servicequotas:GetServiceQuota",  # BR-22
             "servicequotas:GetAWSDefaultServiceQuota",  # BR-22
@@ -176,7 +179,7 @@ def test_required_core_bedrock_actions_are_granted(check):
     )
 
 
-_INSPECTOR_GRANT_TEMPLATES = [
+_ALL_POLICY_TEMPLATES = [
     os.path.join(_REPO_ROOT, "aiml-security-assessment", "template.yaml"),
     os.path.join(_REPO_ROOT, "aiml-security-assessment", "template-multi-account.yaml"),
     os.path.join(_REPO_ROOT, "deployment", "1-aiml-security-member-roles.yaml"),
@@ -187,7 +190,23 @@ _INSPECTOR_GRANT_TEMPLATES = [
 
 @pytest.mark.parametrize(
     "template",
-    _INSPECTOR_GRANT_TEMPLATES,
+    _ALL_POLICY_TEMPLATES,
+    ids=lambda p: os.path.basename(p),
+)
+def test_br40_kms_actions_granted(template):
+    """BR-40 must classify each configured key through KMS in every runtime role."""
+    with open(template, encoding="utf-8") as fh:
+        text = fh.read()
+    missing = sorted(action for action in _KMS_ACTIONS if action not in text)
+    assert not missing, (
+        f"{os.path.basename(template)} is missing required KMS IAM action(s): "
+        f"{missing}. Grant them or BR-40 will surface as AccessDenied / N/A."
+    )
+
+
+@pytest.mark.parametrize(
+    "template",
+    _ALL_POLICY_TEMPLATES,
     ids=lambda p: os.path.basename(p),
 )
 def test_br33_inspector_actions_granted(template):

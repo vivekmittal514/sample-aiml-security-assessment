@@ -13,7 +13,9 @@ import sys
 import os
 import importlib.util
 from unittest.mock import call, patch, MagicMock
+
 from botocore.exceptions import EndpointConnectionError, ClientError
+import pytest
 
 from tests.test_helpers import extract_csv_data, assert_finding_schema
 
@@ -612,6 +614,107 @@ class TestProposedSageMakerChecks:
         )[0]
         assert finding["Status"] == "Passed"
         assert finding["Finding"] == "Model Package Group Resource Policy Exposure"
+
+    @pytest.mark.parametrize(
+        ("principal_account", "expected_status"),
+        [
+            ("111122223333", "Passed"),
+            ("444455556666", "Failed"),
+        ],
+        ids=["approved-account", "unapproved-account"],
+    )
+    @patch("sagemaker_app.boto3.client")
+    def test_sm30_external_account_allowlist_is_enforced(
+        self, mock_client, principal_account, expected_status
+    ):
+        sagemaker_client = MagicMock()
+        sts_client = MagicMock()
+        sts_client.get_caller_identity.return_value = {"Account": "123456789012"}
+        policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "AWS": f"arn:aws:iam::{principal_account}:root",
+                    },
+                    "Action": "sagemaker:CreateModelPackage",
+                    "Resource": "*",
+                }
+            ],
+        }
+        sagemaker_client.get_model_package_group_policy.return_value = {
+            "ResourcePolicy": sagemaker_app.json.dumps(policy)
+        }
+
+        def client_factory(service, **kwargs):
+            return sts_client if service == "sts" else sagemaker_client
+
+        mock_client.side_effect = client_factory
+        with patch.dict(
+            os.environ,
+            {
+                "AIML_APPROVED_EXTERNAL_ACCOUNT_IDS": "111122223333",
+                "AIML_APPROVED_ORG_IDS": "",
+            },
+            clear=False,
+        ):
+            finding = extract_csv_data(
+                sagemaker_app.check_model_package_group_policy_exposure(
+                    "us-east-1",
+                    [{"ModelPackageGroupName": "group-1"}],
+                )
+            )[0]
+
+        assert finding["Status"] == expected_status
+        assert finding["Severity"] == "High"
+
+    @patch.dict(
+        os.environ,
+        {"AIML_APPROVED_ORG_IDS": "o-a1b2c3d4e5"},
+        clear=False,
+    )
+    @patch("sagemaker_app.boto3.client")
+    def test_sm30_unapproved_org_path_fails_configured_boundary(self, mock_client):
+        sagemaker_client = MagicMock()
+        sts_client = MagicMock()
+        sts_client.get_caller_identity.return_value = {"Account": "123456789012"}
+        policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "sagemaker:CreateModelPackage",
+                    "Resource": "*",
+                    "Condition": {
+                        "ForAnyValue:StringLike": {
+                            "aws:PrincipalOrgPaths": (
+                                "o-f6g7h8i9j0/r-ab12/ou-ab12-11111111/*"
+                            )
+                        }
+                    },
+                }
+            ],
+        }
+        sagemaker_client.get_model_package_group_policy.return_value = {
+            "ResourcePolicy": sagemaker_app.json.dumps(policy)
+        }
+
+        def client_factory(service, **kwargs):
+            return sts_client if service == "sts" else sagemaker_client
+
+        mock_client.side_effect = client_factory
+        finding = extract_csv_data(
+            sagemaker_app.check_model_package_group_policy_exposure(
+                "us-east-1",
+                [{"ModelPackageGroupName": "group-1"}],
+            )
+        )[0]
+
+        assert finding["Status"] == "Failed"
+        assert finding["Severity"] == "High"
+        assert "o-f6g7h8i9j0" in finding["Finding_Details"]
 
     @patch("sagemaker_app.boto3.client")
     def test_sm30_allow_notprincipal_is_unsupported(self, mock_client):

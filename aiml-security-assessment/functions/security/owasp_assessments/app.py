@@ -234,6 +234,38 @@ OWASP_CHECK_MAPPINGS: Dict[str, List[Dict[str, str]]] = {
             "resolution": "Configure guardrail sensitiveInformationPolicy with PII entities and regex patterns; set outputAction=ANONYMIZE or BLOCK.",
         }
     ],
+    "BR-37": [
+        {
+            "check_id": "OW-02",
+            "owasp_category": "LLM02:2025 Sensitive Information Disclosure",
+            "finding": "OWASP LLM02: Bedrock Data Retention Boundary",
+            "resolution": "Configure Bedrock account data retention as none and disable provider data sharing when prompts or responses may contain sensitive information.",
+        }
+    ],
+    "BR-38": [
+        {
+            "check_id": "OW-02",
+            "owasp_category": "LLM02:2025 Sensitive Information Disclosure",
+            "finding": "OWASP LLM02: Automated Reasoning Policy Encryption",
+            "resolution": "Encrypt Automated Reasoning policies with a customer-managed KMS key to protect policy definitions and associated sensitive configuration.",
+        }
+    ],
+    "BR-40": [
+        {
+            "check_id": "OW-02",
+            "owasp_category": "LLM02:2025 Sensitive Information Disclosure",
+            "finding": "OWASP LLM02: Marketplace Endpoint CMK Encryption",
+            "resolution": "Configure Bedrock Marketplace model endpoints with a customer-managed KMS key rather than an AWS-managed key.",
+        }
+    ],
+    "AC-14": [
+        {
+            "check_id": "OW-02",
+            "owasp_category": "LLM02:2025 Sensitive Information Disclosure",
+            "finding": "OWASP LLM02: AgentCore Token Vault CMK Encryption",
+            "resolution": "Configure the AgentCore Identity token vault with a customer-managed KMS key to protect stored credentials and tokens.",
+        }
+    ],
     "FS-43": [
         {
             "check_id": "OW-02",
@@ -280,6 +312,14 @@ OWASP_CHECK_MAPPINGS: Dict[str, List[Dict[str, str]]] = {
             "owasp_category": "LLM02:2025 Sensitive Information Disclosure",
             "finding": "OWASP LLM02: SageMaker Feature Store Encryption",
             "resolution": "Encrypt SageMaker Feature Store offline stores with customer-managed KMS keys so sensitive feature data is protected at rest.",
+        }
+    ],
+    "SM-27": [
+        {
+            "check_id": "OW-02",
+            "owasp_category": "LLM02:2025 Sensitive Information Disclosure",
+            "finding": "OWASP LLM02: HyperPod Volume CMK Encryption",
+            "resolution": "Encrypt HyperPod root and secondary EBS volumes with customer-managed KMS keys to protect training data and model artifacts at rest.",
         }
     ],
     # LLM03 Supply Chain
@@ -337,6 +377,14 @@ OWASP_CHECK_MAPPINGS: Dict[str, List[Dict[str, str]]] = {
             "owasp_category": "LLM03:2025 Supply Chain",
             "finding": "OWASP LLM03: Inspector Lambda Code Scanning",
             "resolution": "Enable Amazon Inspector Lambda standard scanning and Lambda code scanning so vulnerable dependencies and hardcoded secrets in Bedrock-calling Lambda functions are detected as part of the GenAI supply chain.",
+        }
+    ],
+    "BR-39": [
+        {
+            "check_id": "OW-03",
+            "owasp_category": "LLM03:2025 Supply Chain",
+            "finding": "OWASP LLM03: Marketplace Endpoint VPC Isolation",
+            "resolution": "Configure Bedrock Marketplace model endpoints with approved VPC subnets and security groups so model and dependency paths remain inside controlled network boundaries.",
         }
     ],
     "SM-01": [
@@ -398,6 +446,22 @@ OWASP_CHECK_MAPPINGS: Dict[str, List[Dict[str, str]]] = {
             "finding": "OWASP LLM04: SageMaker ML Lineage Tracking",
             "resolution": "Track SageMaker training lineage from source data through model artifacts so poisoned data or model versions can be traced and remediated.",
         },
+    ],
+    "SM-28": [
+        {
+            "check_id": "OW-03",
+            "owasp_category": "LLM03:2025 Supply Chain",
+            "finding": "OWASP LLM03: HyperPod VPC Boundary",
+            "resolution": "Configure every HyperPod instance group with approved VPC subnets and security groups to control training-data, model-artifact, and dependency access paths.",
+        }
+    ],
+    "SM-30": [
+        {
+            "check_id": "OW-03",
+            "owasp_category": "LLM03:2025 Supply Chain",
+            "finding": "OWASP LLM03: Model Registry Resource Policy Boundary",
+            "resolution": "Restrict SageMaker model package group resource policies to approved accounts and organizations, and remove public access.",
+        }
     ],
     # LLM04 Data and Model Poisoning
     "BR-25": [
@@ -526,6 +590,14 @@ OWASP_CHECK_MAPPINGS: Dict[str, List[Dict[str, str]]] = {
             "owasp_category": "LLM06:2025 Excessive Agency",
             "finding": "OWASP LLM06: Code Interpreter Network Isolation",
             "resolution": "Run custom AgentCore Code Interpreters in VPC mode with approved subnets and security groups.",
+        }
+    ],
+    "AC-16": [
+        {
+            "check_id": "OW-06",
+            "owasp_category": "LLM06:2025 Excessive Agency",
+            "finding": "OWASP LLM06: Browser Tool Network Isolation",
+            "resolution": "Run custom AgentCore browsers in VPC mode with approved subnets and security groups.",
         }
     ],
     "BR-21": [

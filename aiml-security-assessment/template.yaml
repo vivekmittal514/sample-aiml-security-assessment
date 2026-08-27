@@ -277,6 +277,11 @@ Resources:
                 - bedrock:GetMarketplaceModelEndpoint
                 - bedrock:ListEnforcedGuardrailsConfiguration
               Resource: '*'
+            - Sid: KMSPermissions
+              Effect: Allow
+              Action:
+                - kms:DescribeKey # BR-40
+              Resource: '*'
             - Sid: ServiceQuotasPermissions
               Effect: Allow
               Action:

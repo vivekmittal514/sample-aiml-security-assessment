@@ -7651,14 +7651,13 @@ def check_bedrock_marketplace_endpoint_vpc(
 
 
 def check_bedrock_marketplace_endpoint_cmk(
-    region: str = "", endpoint_inventory: Dict[str, Any] = None
+    region: str = "",
+    endpoint_inventory: Dict[str, Any] = None,
+    kms_client: Any = None,
 ) -> Dict[str, Any]:
     """BR-40: Assess Marketplace endpoint customer-managed KMS encryption."""
     findings = {"csv_data": []}
-    reference = (
-        "https://docs.aws.amazon.com/bedrock/latest/APIReference/"
-        "API_RegisterMarketplaceModelEndpoint.html"
-    )
+    reference = "https://docs.aws.amazon.com/kms/latest/developerguide/key-types.html"
     required = os.environ.get("REQUIRE_MARKETPLACE_ENDPOINT_CMK", "true").lower() in {
         "1",
         "true",
@@ -7688,6 +7687,7 @@ def check_bedrock_marketplace_endpoint_cmk(
         )
         return findings
 
+    key_manager_cache = {}
     for item in inventory.get("items", []):
         endpoint_arn = item["summary"].get("endpointArn", "unknown")
         sagemaker_config = (item["detail"].get("endpointConfig") or {}).get("sageMaker")
@@ -7706,21 +7706,89 @@ def check_bedrock_marketplace_endpoint_cmk(
             )
             continue
         kms_key = sagemaker_config.get("kmsEncryptionKey")
-        status = "Passed" if kms_key else ("Failed" if required else "N/A")
+        if not kms_key:
+            findings["csv_data"].append(
+                create_finding(
+                    check_id="BR-40",
+                    finding_name="Marketplace Model Endpoint CMK Encryption",
+                    finding_details=f"Marketplace endpoint '{endpoint_arn}' does not specify a customer-managed KMS key.",
+                    resolution=(
+                        "Register the endpoint with a customer-managed KMS key."
+                        if required
+                        else "No action required under the current baseline. Set REQUIRE_MARKETPLACE_ENDPOINT_CMK=true to enforce customer-managed encryption."
+                    ),
+                    reference=reference,
+                    severity="Medium" if required else "Informational",
+                    status="Failed" if required else "N/A",
+                    region=region,
+                )
+            )
+            continue
+
+        try:
+            if kms_key not in key_manager_cache:
+                if kms_client is None:
+                    kms_client = boto3.client(
+                        "kms", config=boto3_config, region_name=region
+                    )
+                response = kms_client.describe_key(KeyId=kms_key)
+                key_manager_cache[kms_key] = (response.get("KeyMetadata") or {}).get(
+                    "KeyManager"
+                )
+            key_manager = key_manager_cache[kms_key]
+        except Exception as error:
+            findings["csv_data"].append(
+                create_finding(
+                    check_id="BR-40",
+                    finding_name="Marketplace Model Endpoint CMK Encryption",
+                    finding_details=(
+                        f"Marketplace endpoint '{endpoint_arn}' uses KMS key {kms_key}, "
+                        "but the assessment could not determine whether it is "
+                        f"customer-managed. Assessment error: {get_assessment_error_label(error)}."
+                    ),
+                    resolution="Grant kms:DescribeKey for the configured key and retry.",
+                    reference=reference,
+                    severity="Informational",
+                    status="N/A",
+                    region=region,
+                )
+            )
+            continue
+
+        if key_manager not in {"CUSTOMER", "AWS"}:
+            findings["csv_data"].append(
+                create_finding(
+                    check_id="BR-40",
+                    finding_name="Marketplace Model Endpoint CMK Encryption",
+                    finding_details=(
+                        f"Marketplace endpoint '{endpoint_arn}' uses KMS key {kms_key}, "
+                        "but AWS KMS did not return a recognized key manager."
+                    ),
+                    resolution="Verify the KMS key configuration and retry the assessment.",
+                    reference=reference,
+                    severity="Informational",
+                    status="N/A",
+                    region=region,
+                )
+            )
+            continue
+
+        uses_cmk = key_manager == "CUSTOMER"
+        status = "Passed" if uses_cmk else ("Failed" if required else "N/A")
         findings["csv_data"].append(
             create_finding(
                 check_id="BR-40",
                 finding_name="Marketplace Model Endpoint CMK Encryption",
                 finding_details=(
                     f"Marketplace endpoint '{endpoint_arn}' uses customer-managed KMS key {kms_key}."
-                    if kms_key
-                    else f"Marketplace endpoint '{endpoint_arn}' does not specify a customer-managed KMS key."
+                    if uses_cmk
+                    else f"Marketplace endpoint '{endpoint_arn}' uses AWS-managed KMS key {kms_key} instead of a customer-managed key."
                 ),
                 resolution=(
                     "No action required"
-                    if kms_key
+                    if uses_cmk
                     else (
-                        "Register the endpoint with kmsEncryptionKey."
+                        "Register the endpoint with a customer-managed KMS key."
                         if required
                         else "No action required under the current baseline. Set REQUIRE_MARKETPLACE_ENDPOINT_CMK=true to enforce customer-managed encryption."
                     )

@@ -449,7 +449,7 @@ Each security check has a unique identifier with a service prefix:
 ### BR-40: Marketplace Model Endpoint CMK Encryption
 
 - **Severity:** Medium by default
-- **Description:** Requires a non-empty Marketplace endpoint `kmsEncryptionKey`. The `RequireMarketplaceEndpointCMK` deployment parameter defaults to `true` (`REQUIRE_MARKETPLACE_ENDPOINT_CMK` in the Lambda). Set it to `false` to make missing CMK configuration an `N/A`/Informational hardening advisory rather than a failure.
+- **Description:** Resolves the Marketplace endpoint `kmsEncryptionKey` with `kms:DescribeKey` and requires `KeyMetadata.KeyManager` to be `CUSTOMER`; AWS-managed keys do not pass. The `RequireMarketplaceEndpointCMK` deployment parameter defaults to `true` (`REQUIRE_MARKETPLACE_ENDPOINT_CMK` in the Lambda). Set it to `false` to make a missing or AWS-managed key an `N/A`/Informational hardening advisory rather than a failure. An inconclusive KMS lookup is always `N/A`/Informational.
 
 ---
 

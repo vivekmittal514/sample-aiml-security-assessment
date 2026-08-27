@@ -62,10 +62,6 @@ AGENTCORE_OBSERVABILITY_REFERENCE_URL = (
     "https://aws.github.io/bedrock-agentcore-starter-toolkit/"
     "user-guide/observability/quickstart.html"
 )
-AGENTCORE_BROWSER_REFERENCE_URL = (
-    "https://aws.github.io/bedrock-agentcore-starter-toolkit/"
-    "user-guide/builtin-tools/quickstart-browser.html"
-)
 AGENTCORE_MEMORY_REFERENCE_URL = (
     "https://aws.github.io/bedrock-agentcore-starter-toolkit/"
     "user-guide/memory/quickstart.html"
@@ -96,6 +92,7 @@ AGENTCORE_SECURITY_HUB_REFERENCE_URL = (
     "https://docs.aws.amazon.com/securityhub/latest/userguide/"
     "bedrockagentcore-controls.html"
 )
+AGENTCORE_BROWSER_RECORDING_FINDING_NAME = "AgentCore Browser Session Recording"
 AGENTCORE_ONLINE_EVALUATION_REFERENCE_URL = (
     "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/"
     "get-online-evaluations.html"
@@ -1550,10 +1547,10 @@ def check_browser_tool_recording(
         findings.append(
             create_finding(
                 check_id="AC-06",
-                finding_name="AgentCore Browser Tool Recording Check",
+                finding_name=AGENTCORE_BROWSER_RECORDING_FINDING_NAME,
                 finding_details="AgentCore client not available in this region",
                 resolution="Deploy in a region where Amazon Bedrock AgentCore is available",
-                reference=AGENTCORE_BROWSER_REFERENCE_URL,
+                reference=AGENTCORE_SECURITY_HUB_REFERENCE_URL,
                 severity=SeverityEnum.INFORMATIONAL,
                 status=StatusEnum.NA,
             )
@@ -1567,7 +1564,7 @@ def check_browser_tool_recording(
             findings.append(
                 create_finding(
                     check_id="AC-06",
-                    finding_name="AgentCore Browser Tool Recording Check",
+                    finding_name=AGENTCORE_BROWSER_RECORDING_FINDING_NAME,
                     finding_details=f"Could not assess custom browser recording: {type(error).__name__}.",
                     resolution="Grant bedrock-agentcore:ListBrowsers and bedrock-agentcore:GetBrowser, then retry.",
                     reference=AGENTCORE_SECURITY_HUB_REFERENCE_URL,
@@ -1582,7 +1579,7 @@ def check_browser_tool_recording(
             findings.append(
                 create_finding(
                     check_id="AC-06",
-                    finding_name="AgentCore Browser Tool Recording Check",
+                    finding_name=AGENTCORE_BROWSER_RECORDING_FINDING_NAME,
                     finding_details="No custom AgentCore browsers found",
                     resolution="No action required",
                     reference=AGENTCORE_SECURITY_HUB_REFERENCE_URL,
@@ -1606,7 +1603,7 @@ def check_browser_tool_recording(
             findings.append(
                 create_finding(
                     check_id="AC-06",
-                    finding_name="AgentCore Browser Session Recording",
+                    finding_name=AGENTCORE_BROWSER_RECORDING_FINDING_NAME,
                     finding_details=(
                         f"Custom browser '{browser_name}' ({browser_id}) has session "
                         f"recording enabled with S3 bucket '{bucket}'."
@@ -1631,7 +1628,7 @@ def check_browser_tool_recording(
             findings.append(
                 create_finding(
                     check_id="AC-06",
-                    finding_name="AgentCore Browser Tool Recording Check",
+                    finding_name=AGENTCORE_BROWSER_RECORDING_FINDING_NAME,
                     finding_details=(
                         f"Custom browser '{summary.get('name', summary.get('browserId', 'unknown'))}' "
                         f"could not be assessed: {type(error).__name__}."
@@ -1648,10 +1645,10 @@ def check_browser_tool_recording(
         findings.append(
             create_finding(
                 check_id="AC-06",
-                finding_name="AgentCore Browser Tool Recording Check",
+                finding_name=AGENTCORE_BROWSER_RECORDING_FINDING_NAME,
                 finding_details=f"Could not assess custom browser recording: {type(e).__name__}.",
                 resolution="Resolve the assessment prerequisite or permission issue and retry.",
-                reference=AGENTCORE_BROWSER_REFERENCE_URL,
+                reference=AGENTCORE_SECURITY_HUB_REFERENCE_URL,
                 severity=SeverityEnum.INFORMATIONAL,
                 status=StatusEnum.NA,
             )

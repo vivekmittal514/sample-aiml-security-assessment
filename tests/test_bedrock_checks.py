@@ -3955,6 +3955,10 @@ class TestProposedBedrockChecks:
         assert finding["Status"] == "Passed"
 
     def test_br39_and_br40_share_marketplace_inventory(self):
+        kms_client = MagicMock()
+        kms_client.describe_key.return_value = {
+            "KeyMetadata": {"KeyManager": "CUSTOMER"}
+        }
         inventory = {
             "items": [
                 {
@@ -3979,30 +3983,45 @@ class TestProposedBedrockChecks:
             bedrock_app.check_bedrock_marketplace_endpoint_vpc("us-east-1", inventory)
         )[0]
         br40 = extract_csv_data(
-            bedrock_app.check_bedrock_marketplace_endpoint_cmk("us-east-1", inventory)
+            bedrock_app.check_bedrock_marketplace_endpoint_cmk(
+                "us-east-1", inventory, kms_client
+            )
         )[0]
         assert br39["Status"] == "Passed"
         assert br40["Status"] == "Passed"
+        assert "customer-managed KMS key" in br40["Finding_Details"]
+        kms_client.describe_key.assert_called_once_with(KeyId="arn:kms:key-1")
 
-    def test_br39_and_br40_missing_controls_fail(self):
-        inventory = {
-            "items": [
-                {
-                    "summary": {"endpointArn": "arn:endpoint-1"},
-                    "detail": {"endpointConfig": {"sageMaker": {}}},
-                }
-            ],
-            "errors": [],
-            "list_error": None,
-        }
-        br39 = extract_csv_data(
-            bedrock_app.check_bedrock_marketplace_endpoint_vpc("us-east-1", inventory)
-        )[0]
-        br40 = extract_csv_data(
-            bedrock_app.check_bedrock_marketplace_endpoint_cmk("us-east-1", inventory)
-        )[0]
+    def test_br39_and_br40_missing_controls_fail_under_default_cmk_baseline(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("REQUIRE_MARKETPLACE_ENDPOINT_CMK", None)
+            inventory = {
+                "items": [
+                    {
+                        "summary": {"endpointArn": "arn:endpoint-1"},
+                        "detail": {"endpointConfig": {"sageMaker": {}}},
+                    }
+                ],
+                "errors": [],
+                "list_error": None,
+            }
+            br39 = extract_csv_data(
+                bedrock_app.check_bedrock_marketplace_endpoint_vpc(
+                    "us-east-1", inventory
+                )
+            )[0]
+            br40 = extract_csv_data(
+                bedrock_app.check_bedrock_marketplace_endpoint_cmk(
+                    "us-east-1", inventory
+                )
+            )[0]
+
         assert br39["Status"] == "Failed"
         assert br40["Status"] == "Failed"
+        assert br40["Severity"] == "Medium"
+        assert br40["Resolution"] == (
+            "Register the endpoint with a customer-managed KMS key."
+        )
 
     @patch.dict(
         os.environ,
@@ -4026,6 +4045,137 @@ class TestProposedBedrockChecks:
         assert finding["Status"] == "N/A"
         assert finding["Severity"] == "Informational"
         assert finding["Resolution"].startswith("No action required")
+
+    def test_br40_aws_managed_key_fails_required_baseline(self):
+        kms_client = MagicMock()
+        kms_client.describe_key.return_value = {"KeyMetadata": {"KeyManager": "AWS"}}
+        inventory = {
+            "items": [
+                {
+                    "summary": {"endpointArn": "arn:endpoint-1"},
+                    "detail": {
+                        "endpointConfig": {
+                            "sageMaker": {
+                                "kmsEncryptionKey": "alias/aws/sagemaker",
+                            }
+                        }
+                    },
+                }
+            ],
+            "errors": [],
+            "list_error": None,
+        }
+
+        finding = extract_csv_data(
+            bedrock_app.check_bedrock_marketplace_endpoint_cmk(
+                "us-east-1", inventory, kms_client
+            )
+        )[0]
+
+        assert finding["Status"] == "Failed"
+        assert finding["Severity"] == "Medium"
+        assert "uses AWS-managed KMS key" in finding["Finding_Details"]
+        assert "uses customer-managed KMS key" not in finding["Finding_Details"]
+
+    @patch.dict(
+        os.environ,
+        {"REQUIRE_MARKETPLACE_ENDPOINT_CMK": "false"},
+        clear=False,
+    )
+    def test_br40_aws_managed_key_is_advisory_when_baseline_optional(self):
+        kms_client = MagicMock()
+        kms_client.describe_key.return_value = {"KeyMetadata": {"KeyManager": "AWS"}}
+        inventory = {
+            "items": [
+                {
+                    "summary": {"endpointArn": "arn:endpoint-1"},
+                    "detail": {
+                        "endpointConfig": {
+                            "sageMaker": {
+                                "kmsEncryptionKey": "alias/aws/sagemaker",
+                            }
+                        }
+                    },
+                }
+            ],
+            "errors": [],
+            "list_error": None,
+        }
+
+        finding = extract_csv_data(
+            bedrock_app.check_bedrock_marketplace_endpoint_cmk(
+                "us-east-1", inventory, kms_client
+            )
+        )[0]
+
+        assert finding["Status"] == "N/A"
+        assert finding["Severity"] == "Informational"
+        assert finding["Resolution"].startswith("No action required")
+
+    def test_br40_describe_key_error_returns_na(self):
+        kms_client = MagicMock()
+        kms_client.describe_key.side_effect = _make_client_error(
+            "AccessDeniedException"
+        )
+        inventory = {
+            "items": [
+                {
+                    "summary": {"endpointArn": "arn:endpoint-1"},
+                    "detail": {
+                        "endpointConfig": {
+                            "sageMaker": {
+                                "kmsEncryptionKey": "arn:kms:key-1",
+                            }
+                        }
+                    },
+                }
+            ],
+            "errors": [],
+            "list_error": None,
+        }
+
+        finding = extract_csv_data(
+            bedrock_app.check_bedrock_marketplace_endpoint_cmk(
+                "us-east-1", inventory, kms_client
+            )
+        )[0]
+
+        assert finding["Status"] == "N/A"
+        assert finding["Severity"] == "Informational"
+        assert "AccessDeniedException" in finding["Finding_Details"]
+        assert finding["Resolution"] == (
+            "Grant kms:DescribeKey for the configured key and retry."
+        )
+
+    def test_br40_unknown_key_manager_returns_na(self):
+        kms_client = MagicMock()
+        kms_client.describe_key.return_value = {"KeyMetadata": {}}
+        inventory = {
+            "items": [
+                {
+                    "summary": {"endpointArn": "arn:endpoint-1"},
+                    "detail": {
+                        "endpointConfig": {
+                            "sageMaker": {
+                                "kmsEncryptionKey": "arn:kms:key-1",
+                            }
+                        }
+                    },
+                }
+            ],
+            "errors": [],
+            "list_error": None,
+        }
+
+        finding = extract_csv_data(
+            bedrock_app.check_bedrock_marketplace_endpoint_cmk(
+                "us-east-1", inventory, kms_client
+            )
+        )[0]
+
+        assert finding["Status"] == "N/A"
+        assert finding["Severity"] == "Informational"
+        assert "did not return a recognized key manager" in finding["Finding_Details"]
 
     def test_new_guardrail_checks_access_denied_return_na(self):
         inventory = {

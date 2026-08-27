@@ -205,7 +205,7 @@ enforced by default.
 | CloudFormation parameter | Default | Affected check | Behavior |
 | --- | --- | --- | --- |
 | `RequireBedrockZeroDataRetention` | `false` | BR-37 | When `true`, the Bedrock account retention modes `default` and `inherit` fail the explicit zero-data-retention baseline. `provider_data_share` fails regardless of this setting. |
-| `RequireMarketplaceEndpointCMK` | `true` | BR-40 | When `true`, a Bedrock Marketplace model endpoint without `kmsEncryptionKey` fails. When `false`, the missing key is reported as an informational `N/A` hardening advisory. |
+| `RequireMarketplaceEndpointCMK` | `true` | BR-40 | When `true`, a Bedrock Marketplace model endpoint without a customer-managed KMS key fails. BR-40 uses `kms:DescribeKey` and requires `KeyManager=CUSTOMER`; AWS-managed keys do not pass. When `false`, a missing or AWS-managed key is reported as an informational `N/A` hardening advisory. |
 | `RequireAgentCoreOnlineEvaluation` | `false` | AC-17 | When `true`, missing or incomplete active AgentCore online evaluation coverage fails. When `false`, absent coverage is informational. |
 | `AgentCoreTokenVaultId` | `default` | AC-14 | Selects the regional AgentCore Identity token vault whose customer-managed KMS encryption is assessed. |
 | `ApprovedExternalAccountIds` | Empty | SM-30 | Comma-separated 12-digit AWS account IDs approved to receive SageMaker Model Registry access. Accounts outside the configured boundary fail. |
@@ -215,6 +215,36 @@ For the approved-account and approved-organization lists, do not include spaces.
 Leaving both lists empty means SM-30 still detects public access, but external
 sharing that cannot be compared with an explicit organizational boundary is
 reported informationally.
+
+When updating a stack with the AWS CLI, use a JSON parameter file for these
+comma-separated values. The CLI shorthand syntax also uses commas as field
+separators, so an unescaped `ParameterValue=111122223333,444455556666` is not
+treated as one value.
+
+Create `params.json`:
+
+```json
+[
+  {
+    "ParameterKey": "ApprovedExternalAccountIds",
+    "ParameterValue": "111122223333,444455556666"
+  },
+  {
+    "ParameterKey": "ApprovedOrganizationIds",
+    "ParameterValue": "o-a1b2c3d4e5,o-f6g7h8i9j0"
+  }
+]
+```
+
+Then pass the file to the stack update:
+
+```bash
+aws cloudformation update-stack \
+  --stack-name <stack-name> \
+  --use-previous-template \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameters file://params.json
+```
 
 These parameters are available in both top-level deployment templates and both
 direct SAM templates. CodeBuild passes the selected values to every deployed

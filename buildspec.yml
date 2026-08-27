@@ -120,15 +120,16 @@ phases:
           exit 1
         fi
 
-        # Use the long-form SAM parameter syntax so an intentionally empty
-        # TargetRegions value is accepted and clears any previous stack value.
-        SAM_TARGET_REGIONS_PARAMETER="ParameterKey=TargetRegions,ParameterValue=${TARGET_REGIONS}"
+        # SAM's legacy CLI parser drops an unquoted empty ParameterValue and
+        # then reuses the inner stack's previous value. Preserve literal quotes
+        # around clearable values so empty input is sent as ParameterValue="".
+        SAM_TARGET_REGIONS_PARAMETER="ParameterKey=TargetRegions,ParameterValue=\"${TARGET_REGIONS}\""
         SAM_REQUIRE_BEDROCK_ZERO_DATA_RETENTION_PARAMETER="ParameterKey=RequireBedrockZeroDataRetention,ParameterValue=${REQUIRE_BEDROCK_ZERO_DATA_RETENTION:-false}"
         SAM_REQUIRE_MARKETPLACE_ENDPOINT_CMK_PARAMETER="ParameterKey=RequireMarketplaceEndpointCMK,ParameterValue=${REQUIRE_MARKETPLACE_ENDPOINT_CMK:-true}"
         SAM_REQUIRE_AGENTCORE_ONLINE_EVALUATION_PARAMETER="ParameterKey=RequireAgentCoreOnlineEvaluation,ParameterValue=${REQUIRE_AGENTCORE_ONLINE_EVALUATION:-false}"
         SAM_AGENTCORE_TOKEN_VAULT_ID_PARAMETER="ParameterKey=AgentCoreTokenVaultId,ParameterValue=${AGENTCORE_TOKEN_VAULT_ID:-default}"
-        SAM_APPROVED_EXTERNAL_ACCOUNT_IDS_PARAMETER="ParameterKey=ApprovedExternalAccountIds,ParameterValue=${APPROVED_EXTERNAL_ACCOUNT_IDS:-}"
-        SAM_APPROVED_ORGANIZATION_IDS_PARAMETER="ParameterKey=ApprovedOrganizationIds,ParameterValue=${APPROVED_ORGANIZATION_IDS:-}"
+        SAM_APPROVED_EXTERNAL_ACCOUNT_IDS_PARAMETER="ParameterKey=ApprovedExternalAccountIds,ParameterValue=\"${APPROVED_EXTERNAL_ACCOUNT_IDS:-}\""
+        SAM_APPROVED_ORGANIZATION_IDS_PARAMETER="ParameterKey=ApprovedOrganizationIds,ParameterValue=\"${APPROVED_ORGANIZATION_IDS:-}\""
         export SAM_TARGET_REGIONS_PARAMETER
         export SAM_REQUIRE_BEDROCK_ZERO_DATA_RETENTION_PARAMETER
         export SAM_REQUIRE_MARKETPLACE_ENDPOINT_CMK_PARAMETER

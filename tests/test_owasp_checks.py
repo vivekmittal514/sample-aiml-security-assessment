@@ -288,6 +288,37 @@ class TestOWASPMappings:
             row["Reference"].startswith("https://genai.owasp.org/") for row in rows
         )
 
+    def test_new_core_controls_map_to_direct_owasp_analogues(self):
+        expected_mappings = {
+            "AC-14": ["OW-02"],
+            "AC-16": ["OW-06"],
+            "BR-37": ["OW-02"],
+            "BR-38": ["OW-02"],
+            "BR-39": ["OW-03"],
+            "BR-40": ["OW-02"],
+            "SM-27": ["OW-02"],
+            "SM-28": ["OW-03"],
+            "SM-30": ["OW-03"],
+        }
+        source_rows = [
+            {
+                "Check_ID": source_id,
+                "Finding_Details": f"{source_id} detected a control gap.",
+                "Severity": "High",
+                "Status": "Failed",
+                "Region": "us-east-1",
+            }
+            for source_id in expected_mappings
+        ]
+
+        rows = owasp_app.build_owasp_mapping_findings(source_rows, region="us-east-1")
+        rows_by_source = {}
+        for row in rows:
+            source_id = row["Finding_Details"].split("Source check ", 1)[1][:5]
+            rows_by_source.setdefault(source_id, []).append(row["Check_ID"])
+
+        assert rows_by_source == expected_mappings
+
     def test_all_ow_ids_referenced_by_mappings_are_valid_check_ids(self):
         # Every OW-## ID must satisfy the schema regex ^[A-Z]{2,3}-\d{2}$.
         for mapping_list in owasp_app.OWASP_CHECK_MAPPINGS.values():
