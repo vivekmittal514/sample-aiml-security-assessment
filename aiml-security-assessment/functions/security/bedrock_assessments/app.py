@@ -303,7 +303,7 @@ def _list_all_items(
     operation_name: str,
     result_key: str,
     *,
-    max_results_param: str = "maxResults",
+    max_results_param: Optional[str] = "maxResults",
     token_param: str = "nextToken",
     token_response_keys: tuple = ("nextToken", "NextToken"),
     max_results: int = 100,
@@ -312,11 +312,13 @@ def _list_all_items(
     """Collect all items from list APIs that expose explicit next-token fields."""
     items = []
     next_token = None
+    seen_tokens = set()
     operation = getattr(client, operation_name)
 
     while True:
         request = dict(kwargs)
-        request[max_results_param] = max_results
+        if max_results_param:
+            request[max_results_param] = max_results
         if next_token:
             request[token_param] = next_token
 
@@ -334,8 +336,9 @@ def _list_all_items(
             if isinstance(candidate_token, str) and candidate_token:
                 next_token = candidate_token
                 break
-        if not next_token:
+        if not next_token or next_token in seen_tokens:
             break
+        seen_tokens.add(next_token)
 
     return items
 
@@ -382,15 +385,19 @@ def detect_bedrock_regional_footprint(region: str = "") -> Optional[bool]:
     probes = [
         (
             "Bedrock Guardrails",
-            lambda: bedrock_client.list_guardrails().get("guardrails", []),
+            lambda: bedrock_client.list_guardrails(maxResults=1).get("guardrails", []),
         ),
         (
             "Bedrock Prompts",
-            lambda: bedrock_agent_client.list_prompts().get("promptSummaries", []),
+            lambda: bedrock_agent_client.list_prompts(maxResults=1).get(
+                "promptSummaries", []
+            ),
         ),
         (
             "Bedrock Agents",
-            lambda: bedrock_agent_client.list_agents().get("agentSummaries", []),
+            lambda: bedrock_agent_client.list_agents(maxResults=1).get(
+                "agentSummaries", []
+            ),
         ),
         (
             "Bedrock Knowledge Bases",
@@ -661,12 +668,28 @@ def has_bedrock_access(iam_client, principal_name: str, principal_type: str) -> 
     logger.debug(f"Checking Bedrock access for {principal_type}: {principal_name}")
     try:
         if principal_type == "role":
-            policies = iam_client.list_attached_role_policies(RoleName=principal_name)
+            policies = _list_all_items(
+                iam_client,
+                "list_attached_role_policies",
+                "AttachedPolicies",
+                max_results_param="MaxItems",
+                token_param="Marker",
+                token_response_keys=("Marker",),
+                RoleName=principal_name,
+            )
         else:
-            policies = iam_client.list_attached_user_policies(UserName=principal_name)
+            policies = _list_all_items(
+                iam_client,
+                "list_attached_user_policies",
+                "AttachedPolicies",
+                max_results_param="MaxItems",
+                token_param="Marker",
+                token_response_keys=("Marker",),
+                UserName=principal_name,
+            )
 
         # Check attached policies
-        for policy in policies["AttachedPolicies"]:
+        for policy in policies:
             policy_arn = policy["PolicyArn"]
             logger.debug(f"Checking policy: {policy_arn}")
             policy_version = iam_client.get_policy(PolicyArn=policy_arn)["Policy"][
@@ -682,11 +705,27 @@ def has_bedrock_access(iam_client, principal_name: str, principal_type: str) -> 
 
         # Check inline policies
         if principal_type == "role":
-            inline_policies = iam_client.list_role_policies(RoleName=principal_name)
+            inline_policies = _list_all_items(
+                iam_client,
+                "list_role_policies",
+                "PolicyNames",
+                max_results_param="MaxItems",
+                token_param="Marker",
+                token_response_keys=("Marker",),
+                RoleName=principal_name,
+            )
         else:
-            inline_policies = iam_client.list_user_policies(UserName=principal_name)
+            inline_policies = _list_all_items(
+                iam_client,
+                "list_user_policies",
+                "PolicyNames",
+                max_results_param="MaxItems",
+                token_param="Marker",
+                token_response_keys=("Marker",),
+                UserName=principal_name,
+            )
 
-        for policy_name in inline_policies["PolicyNames"]:
+        for policy_name in inline_policies:
             logger.debug(f"Checking inline policy: {policy_name}")
             if principal_type == "role":
                 policy_doc = iam_client.get_role_policy(
@@ -969,8 +1008,16 @@ def get_role_usage(role_name: str) -> str:
     try:
         # Check Lambda functions
         lambda_client = boto3.client("lambda", config=boto3_config)
-        lambda_functions = lambda_client.list_functions()
-        for function in lambda_functions["Functions"]:
+        lambda_functions = _list_all_items(
+            lambda_client,
+            "list_functions",
+            "Functions",
+            max_results_param="MaxItems",
+            token_param="Marker",
+            token_response_keys=("NextMarker",),
+            max_results=50,
+        )
+        for function in lambda_functions:
             if role_name in function["Role"]:
                 usage_list.append(f"Lambda: {function['FunctionName']}")
                 logger.debug(f"Found role usage in Lambda: {function['FunctionName']}")
@@ -980,11 +1027,22 @@ def get_role_usage(role_name: str) -> str:
     try:
         # Check ECS tasks
         ecs_client = boto3.client("ecs", config=boto3_config)
-        clusters = ecs_client.list_clusters()["clusterArns"]
+        clusters = _list_all_items(
+            ecs_client, "list_clusters", "clusterArns", max_results=100
+        )
         for cluster in clusters:
-            tasks = ecs_client.list_tasks(cluster=cluster)["taskArns"]
-            if tasks:
-                task_details = ecs_client.describe_tasks(cluster=cluster, tasks=tasks)
+            tasks = _list_all_items(
+                ecs_client,
+                "list_tasks",
+                "taskArns",
+                max_results=100,
+                cluster=cluster,
+            )
+            for batch_start in range(0, len(tasks), 100):
+                task_batch = tasks[batch_start : batch_start + 100]
+                task_details = ecs_client.describe_tasks(
+                    cluster=cluster, tasks=task_batch
+                )
                 for task in task_details["tasks"]:
                     if role_name in task.get("taskRoleArn", ""):
                         usage_list.append(f"ECS Task: {task['taskArn']}")
@@ -1584,8 +1642,14 @@ def check_bedrock_cloudtrail_logging(region: str = "") -> Dict[str, Any]:
 
         try:
             # Get all trails
-            trails_response = cloudtrail_client.list_trails()
-            trails = trails_response.get("Trails", [])
+            trails = _list_all_items(
+                cloudtrail_client,
+                "list_trails",
+                "Trails",
+                max_results_param=None,
+                token_param="NextToken",
+                token_response_keys=("NextToken",),
+            )
 
             bedrock_logging_enabled = False
             logging_trails = []
@@ -3071,9 +3135,20 @@ def check_bedrock_cross_account_guardrails(
             # List policy types enabled for the organization. The Amazon Bedrock
             # policy type (used to enforce guardrails across accounts) is
             # identified as BEDROCK_POLICY in AWS Organizations.
-            enabled_policy_types = orgs_client.list_roots()["Roots"][0].get(
-                "PolicyTypes", []
+            roots = _list_all_items(
+                orgs_client,
+                "list_roots",
+                "Roots",
+                max_results_param="MaxResults",
+                token_param="NextToken",
+                token_response_keys=("NextToken",),
+                max_results=20,
             )
+            enabled_policy_types = [
+                policy_type
+                for root in roots
+                for policy_type in root.get("PolicyTypes", [])
+            ]
             bedrock_policy_enabled = any(
                 pt.get("Type") == "BEDROCK_POLICY" and pt.get("Status") == "ENABLED"
                 for pt in enabled_policy_types

@@ -1453,7 +1453,7 @@ def check_bedrock_agent_action_boundaries(permission_cache) -> Dict[str, Any]:
     findings = _empty_findings("Agent Action Boundary Check")
     try:
         bedrock_agent = boto3.client("bedrock-agent", config=boto3_config)
-        agents = bedrock_agent.list_agents().get("agentSummaries", [])
+        agents = _paginate(bedrock_agent, "list_agents", "agentSummaries")
 
         if not agents:
             findings["csv_data"].append(
@@ -1777,7 +1777,7 @@ def check_human_in_the_loop_for_high_risk_actions() -> Dict[str, Any]:
     findings = _empty_findings("Human-in-the-Loop Approval Check")
     try:
         sfn = boto3.client("stepfunctions", config=boto3_config)
-        machines = sfn.list_state_machines().get("stateMachines", [])
+        machines = _paginate(sfn, "list_state_machines", "stateMachines")
 
         agent_machines = [
             m
@@ -2999,8 +2999,11 @@ def check_knowledge_base_vpc_access() -> Dict[str, Any]:
     findings = _empty_findings("Knowledge Base VPC Access Check")
     try:
         oss = boto3.client("opensearchserverless", config=boto3_config)
-        network_policies = oss.list_security_policies(type="network").get(
-            "securityPolicySummaries", []
+        network_policies = _paginate(
+            oss,
+            "list_security_policies",
+            "securityPolicySummaries",
+            type="network",
         )
 
         if not network_policies:
@@ -3951,6 +3954,8 @@ def check_fm_version_currency() -> Dict[str, Any]:
         # in FinServ RAG pipelines and a legacy embedding model produces stale
         # embeddings — missing it would be a false-pass. Fetch all modalities and
         # let the LEGACY lifecycle filter identify any deprecated model in use.
+        # ListFoundationModels has no continuation token in the Bedrock API
+        # model, so there is no paginated form of this operation.
         models = bedrock.list_foundation_models().get("modelSummaries", [])
 
         deprecated = [
@@ -6563,6 +6568,8 @@ def check_foundation_model_lifecycle_policy() -> Dict[str, Any]:
         # TEXT, EMBEDDING, and IMAGE modalities. Embedding models are widely used
         # in FinServ RAG pipelines; a legacy embedding model silently serves stale
         # vector representations. Fetch all modalities to surface any deprecated model.
+        # ListFoundationModels has no continuation token in the Bedrock API
+        # model, so there is no paginated form of this operation.
         models = bedrock.list_foundation_models().get("modelSummaries", [])
         legacy_models = [
             m["modelId"]
@@ -7532,20 +7539,25 @@ def detect_finserv_regional_footprint(region: str) -> Optional[bool]:
     sagemaker = boto3.client("sagemaker", config=boto3_config, region_name=region)
 
     probes = [
-        ("Bedrock Guardrails", lambda: bedrock.list_guardrails().get("guardrails", [])),
+        (
+            "Bedrock Guardrails",
+            lambda: bedrock.list_guardrails(maxResults=1).get("guardrails", []),
+        ),
         (
             "Bedrock Agents",
-            lambda: bedrock_agent.list_agents().get("agentSummaries", []),
+            lambda: bedrock_agent.list_agents(maxResults=1).get("agentSummaries", []),
         ),
         (
             "Bedrock Knowledge Bases",
-            lambda: bedrock_agent.list_knowledge_bases().get(
+            lambda: bedrock_agent.list_knowledge_bases(maxResults=1).get(
                 "knowledgeBaseSummaries", []
             ),
         ),
         (
             "AgentCore Runtimes",
-            lambda: agentcore.list_agent_runtimes().get("agentRuntimes", []),
+            lambda: agentcore.list_agent_runtimes(maxResults=1).get(
+                "agentRuntimes", []
+            ),
         ),
         (
             "SageMaker Endpoints",

@@ -277,6 +277,7 @@ def _agentcore_list_all(
 
     items: List[Dict[str, Any]] = []
     next_token = None
+    seen_tokens = set()
     list_method = getattr(agentcore_client, list_method_name)
 
     while True:
@@ -305,8 +306,9 @@ def _agentcore_list_all(
                 f"{type(next_token).__name__}"
             )
             break
-        if not next_token:
+        if not next_token or next_token in seen_tokens:
             break
+        seen_tokens.add(next_token)
 
     return items
 
@@ -2191,8 +2193,7 @@ def check_agentcore_vpc_endpoints() -> List[Dict[str, Any]]:
     try:
         logger.info("Checking for AgentCore VPC endpoints")
 
-        runtimes_response = agentcore_client.list_agent_runtimes()
-        runtimes = runtimes_response.get("agentRuntimes", [])
+        runtimes = _agentcore_list_all("list_agent_runtimes", ["agentRuntimes"])
 
         if not runtimes:
             findings.append(

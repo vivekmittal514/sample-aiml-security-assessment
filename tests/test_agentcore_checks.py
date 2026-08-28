@@ -455,6 +455,23 @@ class TestAC07MemoryConfiguration:
 class TestAC08VPCEndpoints:
     """AC-08: Check VPC endpoints for AgentCore."""
 
+    @patch("agentcore_app.agentcore_client")
+    def test_agentcore_list_all_stops_on_repeated_token(self, mock_ac):
+        mock_ac.list_agent_runtimes.return_value = {
+            "agentRuntimes": [{"agentRuntimeId": "runtime-1"}],
+            "nextToken": "repeated",
+        }
+
+        runtimes = agentcore_app._agentcore_list_all(
+            "list_agent_runtimes", ["agentRuntimes"]
+        )
+
+        assert runtimes == [
+            {"agentRuntimeId": "runtime-1"},
+            {"agentRuntimeId": "runtime-1"},
+        ]
+        assert mock_ac.list_agent_runtimes.call_count == 2
+
     @patch("agentcore_app.ec2_client")
     @patch("agentcore_app.agentcore_client", None)
     def test_ac08_client_unavailable_returns_na(self, mock_ec2):
@@ -476,7 +493,37 @@ class TestAC08VPCEndpoints:
 
     @patch("agentcore_app.ec2_client")
     @patch("agentcore_app.agentcore_client")
+    def test_ac08_reads_runtimes_from_all_pages(self, mock_ac, mock_ec2):
+        mock_ac.list_agent_runtimes.side_effect = [
+            {"agentRuntimes": [], "nextToken": "runtime-page-2"},
+            {
+                "agentRuntimes": [
+                    {
+                        "agentRuntimeId": "runtime-2",
+                        "agentRuntimeName": "SecondPageRuntime",
+                    }
+                ]
+            },
+        ]
+        mock_ec2.describe_vpcs.return_value = {"Vpcs": []}
+
+        findings = extract_csv_data(agentcore_app.check_agentcore_vpc_endpoints())
+
+        assert findings[0]["Finding_Details"] == "No VPCs found in the account"
+        assert mock_ac.list_agent_runtimes.call_count == 2
+        mock_ac.list_agent_runtimes.assert_any_call(nextToken="runtime-page-2")
+
+    @patch("agentcore_app.ec2_client")
+    @patch("agentcore_app.agentcore_client")
     def test_ac08_exception_returns_error_finding(self, mock_ac, mock_ec2):
+        mock_ac.list_agent_runtimes.return_value = {
+            "agentRuntimes": [
+                {
+                    "agentRuntimeId": "runtime-1",
+                    "agentRuntimeName": "TestRuntime",
+                }
+            ]
+        }
         mock_ec2.describe_vpcs.side_effect = Exception("VPC endpoint error")
         result = agentcore_app.check_agentcore_vpc_endpoints()
         findings = extract_csv_data(result)

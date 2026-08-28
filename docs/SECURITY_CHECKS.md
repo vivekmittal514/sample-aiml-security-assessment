@@ -4,7 +4,7 @@ This document provides a comprehensive reference for all 194 security checks per
 
 Sources differ by bucket and are not interchangeable: the core Bedrock, SageMaker, and AgentCore checks derive from the AWS Well-Architected **Generative AI Lens** security best practices (`gensec*`); the Agentic AI Security checks from the AWS Well-Architected **Agentic AI Lens**; the `FS-*` **Responsible AI GRC** checks from the AWS GRC User Guide; and the `OW-*` checks from the OWASP Top 10 for LLM. The AWS Well-Architected **Responsible AI Lens** is not a source for any of them — see [Responsible AI GRC — scope, sources, and compatibility](RESPONSIBLE_AI_GRC_SCOPE.md).
 
-The 64 Responsible AI GRC checks occupy 69 `FS-*` numbers: 64 ship as standalone checks and 5 are merged into upstream Bedrock/SageMaker checks. `FS-00` is additionally emitted at runtime but is not a control. Per-control provenance, including which controls are project extensions rather than guide-derived, is recorded in [`provenance.json`](../aiml-security-assessment/functions/security/responsible_ai_grc_assessments/provenance.json).
+The 64 Responsible AI GRC checks occupy 69 `FS-*` numbers: 64 ship as standalone checks and 5 are merged into upstream Bedrock/SageMaker checks. The framework also emits `BR-00`, `SM-00`, `AC-00`, `FS-00`, and `OW-00` operational marker rows at runtime; these are not controls and are excluded from the 194-check total. Per-control provenance, including which controls are project extensions rather than guide-derived, is recorded in [`provenance.json`](../aiml-security-assessment/functions/security/responsible_ai_grc_assessments/provenance.json).
 
 ## Table of Contents
 
@@ -48,6 +48,26 @@ Each security check has a unique identifier with a service prefix:
 | **AG-XX** | Agentic AI Security | AG-01, AG-32 |
 | **FS-XX** | Responsible AI GRC | FS-01, FS-69 |
 | **OW-XX** | OWASP Top 10 for LLM | OW-01, OW-12 |
+
+### Runtime marker IDs (not controls)
+
+The `*-00` rows below make assessment coverage and execution problems visible in
+CSV and HTML reports. They are operational markers rather than security
+controls, do not increase the published check counts, and must not be treated as
+evidence that a control passed or failed.
+
+| Marker | Runtime meaning | Normal status / severity |
+| -------- | --------------- | ------------------------ |
+| `BR-00` | Amazon Bedrock is unavailable or not enabled in the target region, so regional Bedrock checks were not run. | `N/A` / Informational |
+| `SM-00` | Amazon SageMaker AI is unavailable or not enabled in the target region, so regional SageMaker checks were not run. | `N/A` / Informational |
+| `AC-00` | Amazon Bedrock AgentCore is unavailable in the target region, or the AgentCore handler caught an unexpected per-check execution error. The error form is a diagnostic row, not a security-control failure. | Availability: `N/A` / Informational. Execution error: `Failed` / High. |
+| `FS-00` | No regional Bedrock, AgentCore, or SageMaker resource footprint was found, so Responsible AI GRC was not applicable to that region. | `N/A` / Informational |
+| `OW-00` | A required upstream assessment CSV was missing, so one or more mapping-derived OWASP rows could not be generated. | `N/A` / Informational |
+
+`FS-00` is described in more detail in
+[Responsible AI GRC Checks](SECURITY_CHECKS_RESPONSIBLE_AI_GRC.md#fs-00--regional-scope-not-applicable-not-a-control),
+and `OW-00` in
+[OWASP Top 10 for LLM Security Checks](SECURITY_CHECKS_OWASP.md).
 
 ---
 

@@ -682,6 +682,24 @@ class TestFS07AgentActionBoundaries:
         assert result["status"] == "PASS"
 
     @patch("finserv_app.boto3.client")
+    def test_reads_agents_from_all_pages(self, mock_client, permission_cache_safe):
+        c = MagicMock()
+        c.list_agents.side_effect = [
+            {"agentSummaries": [], "nextToken": "agent-page-2"},
+            {"agentSummaries": [{"agentId": "a1", "agentName": "SecondPageAgent"}]},
+        ]
+        c.get_agent.return_value = {
+            "agent": {"agentResourceRoleArn": "arn:aws:iam::123:role/BedrockAgentRole"}
+        }
+        mock_client.return_value = c
+
+        result = app.check_bedrock_agent_action_boundaries(permission_cache_safe)
+
+        assert result["status"] == "PASS"
+        assert c.list_agents.call_count == 2
+        c.list_agents.assert_any_call(nextToken="agent-page-2")
+
+    @patch("finserv_app.boto3.client")
     def test_error_on_exception(self, mock_client):
         mock_client.side_effect = RuntimeError("agent error")
         result = app.check_bedrock_agent_action_boundaries({})
@@ -921,6 +939,31 @@ class TestFS10HumanInTheLoop:
         result = app.check_human_in_the_loop_for_high_risk_actions()
         _assert_finding_structure(result)
         assert result["status"] == "WARN"
+
+    @patch("finserv_app.boto3.client")
+    def test_reads_state_machines_from_all_pages(self, mock_client):
+        c = MagicMock()
+        c.list_state_machines.side_effect = [
+            {"stateMachines": [], "nextToken": "machine-page-2"},
+            {
+                "stateMachines": [
+                    {
+                        "name": "agent-approval-flow",
+                        "stateMachineArn": "arn:aws:states:us-east-1:123:sm:second",
+                    }
+                ]
+            },
+        ]
+        c.describe_state_machine.return_value = {
+            "definition": json.dumps({"Integration": "waitForTaskToken"})
+        }
+        mock_client.return_value = c
+
+        result = app.check_human_in_the_loop_for_high_risk_actions()
+
+        assert result["status"] == "PASS"
+        assert c.list_state_machines.call_count == 2
+        c.list_state_machines.assert_any_call(nextToken="machine-page-2")
 
     @patch("finserv_app.boto3.client")
     def test_error_on_exception(self, mock_client):

@@ -122,7 +122,7 @@ def get_guardduty_detector_inventory(region: str = "") -> Dict[str, Any]:
     inventory = {"detector_id": None, "detail": None, "error": None}
     try:
         client = boto3.client("guardduty", config=boto3_config, region_name=region)
-        detector_ids = client.list_detectors().get("DetectorIds", [])
+        detector_ids = client.list_detectors(MaxResults=1).get("DetectorIds", [])
         if not detector_ids:
             return inventory
         inventory["detector_id"] = detector_ids[0]
@@ -4579,26 +4579,36 @@ def get_role_usage(role_name: str) -> str:
     try:
         # Check Lambda functions
         lambda_client = boto3.client("lambda")
-        lambda_functions = lambda_client.list_functions()
-        for function in lambda_functions["Functions"]:
-            if role_name in function["Role"]:
-                usage_list.append(f"Lambda: {function['FunctionName']}")
-                logger.debug(f"Found role usage in Lambda: {function['FunctionName']}")
+        for page in lambda_client.get_paginator("list_functions").paginate():
+            for function in page.get("Functions", []):
+                if role_name in function["Role"]:
+                    usage_list.append(f"Lambda: {function['FunctionName']}")
+                    logger.debug(
+                        f"Found role usage in Lambda: {function['FunctionName']}"
+                    )
     except Exception as e:
         logger.error(f"Error checking Lambda usage: {str(e)}")
 
     try:
         # Check ECS tasks
         ecs_client = boto3.client("ecs")
-        clusters = ecs_client.list_clusters()["clusterArns"]
-        for cluster in clusters:
-            tasks = ecs_client.list_tasks(cluster=cluster)["taskArns"]
-            if tasks:
-                task_details = ecs_client.describe_tasks(cluster=cluster, tasks=tasks)
-                for task in task_details["tasks"]:
-                    if role_name in task.get("taskRoleArn", ""):
-                        usage_list.append(f"ECS Task: {task['taskArn']}")
-                        logger.debug(f"Found role usage in ECS task: {task['taskArn']}")
+        cluster_paginator = ecs_client.get_paginator("list_clusters")
+        task_paginator = ecs_client.get_paginator("list_tasks")
+        for cluster_page in cluster_paginator.paginate():
+            for cluster in cluster_page.get("clusterArns", []):
+                for task_page in task_paginator.paginate(cluster=cluster):
+                    tasks = task_page.get("taskArns", [])
+                    if not tasks:
+                        continue
+                    task_details = ecs_client.describe_tasks(
+                        cluster=cluster, tasks=tasks
+                    )
+                    for task in task_details["tasks"]:
+                        if role_name in task.get("taskRoleArn", ""):
+                            usage_list.append(f"ECS Task: {task['taskArn']}")
+                            logger.debug(
+                                f"Found role usage in ECS task: {task['taskArn']}"
+                            )
     except Exception as e:
         logger.error(f"Error checking ECS usage: {str(e)}")
 

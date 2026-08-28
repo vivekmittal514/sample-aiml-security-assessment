@@ -44,6 +44,79 @@ def assert_could_not_assess_finding(finding):
     assert "Error during check" not in finding["Finding_Details"]
 
 
+class TestRoleUsagePagination:
+    def test_list_all_items_stops_on_repeated_token(self):
+        client = MagicMock()
+        client.list_items.return_value = {
+            "Items": [{"id": "item-1"}],
+            "nextToken": "repeated",
+        }
+
+        items = bedrock_app._list_all_items(
+            client, "list_items", "Items", max_results=100
+        )
+
+        assert items == [{"id": "item-1"}, {"id": "item-1"}]
+        assert client.list_items.call_count == 2
+
+    @patch("bedrock_app.boto3.client")
+    def test_role_usage_reads_all_lambda_ecs_cluster_and_task_pages(self, mock_client):
+        role_name = "BedrockExecutionRole"
+        lambda_client = MagicMock()
+        lambda_client.list_functions.side_effect = [
+            {"Functions": [], "NextMarker": "lambda-page-2"},
+            {
+                "Functions": [
+                    {
+                        "FunctionName": "second-page-function",
+                        "Role": f"arn:aws:iam::123456789012:role/{role_name}",
+                    }
+                ]
+            },
+        ]
+
+        ecs_client = MagicMock()
+        ecs_client.list_clusters.side_effect = [
+            {"clusterArns": ["cluster-1"], "nextToken": "cluster-page-2"},
+            {"clusterArns": ["cluster-2"]},
+        ]
+        ecs_client.list_tasks.side_effect = [
+            {"taskArns": []},
+            {"taskArns": [], "nextToken": "task-page-2"},
+            {"taskArns": ["task-2"]},
+        ]
+        ecs_client.describe_tasks.return_value = {
+            "tasks": [
+                {
+                    "taskArn": "task-2",
+                    "taskRoleArn": f"arn:aws:iam::123456789012:role/{role_name}",
+                }
+            ]
+        }
+
+        mock_client.side_effect = lambda service, **kwargs: {
+            "lambda": lambda_client,
+            "ecs": ecs_client,
+        }[service]
+
+        usage = bedrock_app.get_role_usage(role_name)
+
+        assert "Lambda: second-page-function" in usage
+        assert "ECS Task: task-2" in usage
+        assert lambda_client.list_functions.call_count == 2
+        lambda_client.list_functions.assert_any_call(
+            MaxItems=50, Marker="lambda-page-2"
+        )
+        assert ecs_client.list_clusters.call_count == 2
+        ecs_client.list_clusters.assert_any_call(
+            maxResults=100, nextToken="cluster-page-2"
+        )
+        assert ecs_client.list_tasks.call_count == 3
+        ecs_client.list_tasks.assert_any_call(
+            maxResults=100, cluster="cluster-2", nextToken="task-page-2"
+        )
+
+
 # ===================================================================
 # BR-01: check_bedrock_full_access_roles
 # ===================================================================
@@ -413,6 +486,38 @@ class TestBR06CloudTrailLogging:
         assert len(findings) >= 1
         assert findings[0]["Status"] == "Passed"
         assert findings[0]["Check_ID"] == "BR-06"
+
+    @patch("boto3.client")
+    @patch("bedrock_app.detect_bedrock_regional_footprint", return_value=True)
+    def test_br06_reads_trails_from_all_pages(self, mock_footprint, mock_client):
+        check = bedrock_app.check_bedrock_cloudtrail_logging
+        mock_ct = MagicMock()
+        mock_client.return_value = mock_ct
+        mock_ct.list_trails.side_effect = [
+            {"Trails": [], "NextToken": "trail-page-2"},
+            {
+                "Trails": [
+                    {
+                        "TrailARN": "arn:aws:cloudtrail:us-east-1:123:trail/main",
+                        "Name": "main",
+                    }
+                ]
+            },
+        ]
+        mock_ct.get_trail.return_value = {"Trail": {"IsMultiRegionTrail": True}}
+        mock_ct.get_trail_status.return_value = {"IsLogging": True}
+        mock_ct.get_event_selectors.return_value = {
+            "EventSelectors": [
+                {"IncludeManagementEvents": True, "ReadWriteType": "All"}
+            ],
+            "AdvancedEventSelectors": [],
+        }
+
+        findings = extract_csv_data(check())
+
+        assert findings[0]["Status"] == "Passed"
+        assert mock_ct.list_trails.call_count == 2
+        mock_ct.list_trails.assert_any_call(NextToken="trail-page-2")
 
     @patch("boto3.client")
     @patch("bedrock_app.detect_bedrock_regional_footprint", return_value=True)
@@ -1718,6 +1823,55 @@ class TestBR15CrossAccountGuardrails:
         passed_findings = [f for f in findings if f["Status"] == "Passed"]
         assert len(passed_findings) >= 1
         assert passed_findings[0]["Check_ID"] == "BR-15"
+
+    @patch("bedrock_app.boto3.client")
+    def test_br15_reads_organization_roots_from_all_pages(self, mock_client):
+        check = bedrock_app.check_bedrock_cross_account_guardrails
+
+        bedrock_client = MagicMock()
+        bedrock_client.list_enforced_guardrails_configuration.return_value = {
+            "guardrailsConfig": []
+        }
+        org_client = MagicMock()
+        org_client.describe_organization.return_value = {
+            "Organization": {"MasterAccountId": "123456789012"}
+        }
+        org_client.list_roots.side_effect = [
+            {
+                "Roots": [{"Id": "r-first", "PolicyTypes": []}],
+                "NextToken": "root-page-2",
+            },
+            {
+                "Roots": [
+                    {
+                        "Id": "r-second",
+                        "PolicyTypes": [
+                            {"Type": "BEDROCK_POLICY", "Status": "ENABLED"}
+                        ],
+                    }
+                ]
+            },
+        ]
+        org_client.list_policies.return_value = {
+            "Policies": [{"Id": "p-123", "Name": "BedrockGuardrailPolicy"}]
+        }
+        org_client.list_targets_for_policy.return_value = {
+            "Targets": [{"TargetId": "r-second", "Type": "ROOT"}]
+        }
+        sts_client = MagicMock()
+        sts_client.get_caller_identity.return_value = {"Account": "123456789012"}
+
+        mock_client.side_effect = lambda service, **kwargs: {
+            "bedrock": bedrock_client,
+            "organizations": org_client,
+            "sts": sts_client,
+        }[service]
+
+        findings = extract_csv_data(check(region="Global"))
+
+        assert any(finding["Status"] == "Passed" for finding in findings)
+        assert org_client.list_roots.call_count == 2
+        org_client.list_roots.assert_any_call(MaxResults=20, NextToken="root-page-2")
 
     @patch("bedrock_app.boto3.client")
     def test_br15_access_denied_returns_na(self, mock_client):
