@@ -337,10 +337,14 @@ Resources:
                 - bedrock:ListMarketplaceModelEndpoints
                 - bedrock:ListEnforcedGuardrailsConfiguration
               Resource: '*'
-            - Sid: BedrockGuardrailRead
+            - Sid: BedrockGuardrailReadList
               Effect: Allow
               Action:
                 - bedrock:ListGuardrails
+              Resource: '*'
+            - Sid: BedrockGuardrailRead
+              Effect: Allow
+              Action:
                 - bedrock:GetGuardrail
               Resource: !Sub 'arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:guardrail/*'
             - Sid: BedrockPromptRead
@@ -661,7 +665,9 @@ Resources:
               Effect: Allow
               Action:
                 - iam:GetRole
-              Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/network.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreNetwork'
+              Resource:
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/network.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreNetwork'
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/AWSServiceRoleForBedrockAgentCoreNetwork'
             - Sid: EC2Permissions
               Effect: Allow
               Action:
@@ -847,10 +853,14 @@ Resources:
                 - bedrock:ListAgents
                 - bedrock:ListKnowledgeBases
               Resource: '*'
-            - Sid: BedrockGuardrailRead
+            - Sid: BedrockGuardrailReadList
               Effect: Allow
               Action:
                 - bedrock:ListGuardrails
+              Resource: '*'
+            - Sid: BedrockGuardrailRead
+              Effect: Allow
+              Action:
                 - bedrock:GetGuardrail
               Resource: !Sub 'arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:guardrail/*'
             - Sid: BedrockCustomModelTagRead
@@ -1006,10 +1016,14 @@ Resources:
               Action:
                 - s3:PutObject
               Resource: !Sub '${AIMLAssessmentBucket.Arn}/owasp_security_report_*.csv'
-            - Sid: OWASPBedrockPermissions
+            - Sid: OWASPBedrockPermissionsList
               Effect: Allow
               Action:
                 - bedrock:ListGuardrails
+              Resource: '*'
+            - Sid: OWASPBedrockPermissions
+              Effect: Allow
+              Action:
                 - bedrock:GetGuardrail
               Resource: !Sub 'arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:guardrail/*'
             - Sid: OWASPLambdaPermissions

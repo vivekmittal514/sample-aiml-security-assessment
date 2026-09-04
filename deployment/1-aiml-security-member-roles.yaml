@@ -141,6 +141,8 @@ Resources:
               - !Sub "arn:${AWS::Partition}:states:*:${AWS::AccountId}:stateMachine:aiml-sec-*"
               - !Sub "arn:${AWS::Partition}:states:*:${AWS::AccountId}:execution:aiml-security-*:*"
               - !Sub "arn:${AWS::Partition}:states:*:${AWS::AccountId}:execution:aiml-sec-*:*"
+              - !Sub "arn:${AWS::Partition}:states:*:${AWS::AccountId}:stateMachine:AIMLAssessment*"
+              - !Sub "arn:${AWS::Partition}:states:*:${AWS::AccountId}:execution:AIMLAssessment*:*"
           - Sid: AssessmentAndSamBucketConfiguration
             Effect: Allow
             Action:
