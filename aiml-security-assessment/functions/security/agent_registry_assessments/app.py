@@ -76,6 +76,18 @@ PROVENANCE_REFERENCE_URL = (
     "API_Provenance.html"
 )
 
+
+def _caller_identity_partition(caller_identity: Dict[str, Any]) -> str:
+    """Return the STS ARN partition, defaulting safely for incomplete identities."""
+    arn = caller_identity.get("Arn")
+    if not isinstance(arn, str):
+        return "aws"
+    parts = arn.split(":", 2)
+    if len(parts) < 3 or parts[0] != "arn" or not parts[1]:
+        return "aws"
+    return parts[1]
+
+
 AGENTIC_AGENT_REGISTRY_CHECK_MAPPINGS = {
     "AR-03": {
         "check_id": "AG-33",
@@ -332,7 +344,7 @@ def check_agent_registry_stale_access(
     try:
         caller_identity = boto3.client("sts", config=boto3_config).get_caller_identity()
         account_id = caller_identity["Account"]
-        partition = caller_identity.get("Arn", "arn:aws:sts::").split(":", 2)[1]
+        partition = _caller_identity_partition(caller_identity)
     except Exception as error:
         return [
             _na(

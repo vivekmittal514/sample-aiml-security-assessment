@@ -34,6 +34,18 @@ logger.setLevel(logging.ERROR)
 # multiple regions.
 GLOBAL_REGION_LABEL = "Global"
 
+
+def _caller_identity_partition(caller_identity: Dict[str, Any]) -> str:
+    """Return the STS ARN partition, defaulting safely for incomplete identities."""
+    arn = caller_identity.get("Arn")
+    if not isinstance(arn, str):
+        return "aws"
+    parts = arn.split(":", 2)
+    if len(parts) < 3 or parts[0] != "arn" or not parts[1]:
+        return "aws"
+    return parts[1]
+
+
 # Error codes returned when a region exists but is not enabled/usable for the
 # account (opt-in regions, disabled regions). The availability probe treats
 # these the same as an endpoint connection failure.
@@ -588,9 +600,7 @@ def check_sagemaker_iam_permissions(
                             "sts", config=boto3_config
                         ).get_caller_identity()
                         account_id = caller_identity["Account"]
-                        partition = caller_identity.get("Arn", "arn:aws:sts::").split(
-                            ":", 2
-                        )[1]
+                        partition = _caller_identity_partition(caller_identity)
                     response = iam_client.generate_service_last_accessed_details(
                         Arn=f"arn:{partition}:iam::{account_id}:user/{user_name}"
                     )

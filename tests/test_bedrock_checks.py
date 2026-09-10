@@ -16,6 +16,8 @@ import importlib.util
 from unittest.mock import patch, MagicMock
 from botocore.exceptions import EndpointConnectionError, ClientError
 
+import pytest
+
 from tests.test_helpers import extract_csv_data, assert_finding_schema
 
 # Load bedrock app module directly to avoid name collisions with other app.py files
@@ -35,6 +37,26 @@ _spec = importlib.util.spec_from_file_location(
 bedrock_app = importlib.util.module_from_spec(_spec)
 sys.modules["bedrock_app"] = bedrock_app
 _spec.loader.exec_module(bedrock_app)
+
+
+@pytest.mark.parametrize(
+    ("caller_identity", "expected_partition"),
+    [
+        ({"Arn": "arn:aws:sts::123456789012:assumed-role/test/session"}, "aws"),
+        (
+            {"Arn": "arn:aws-us-gov:sts::123456789012:assumed-role/test/session"},
+            "aws-us-gov",
+        ),
+        ({}, "aws"),
+        ({"Arn": ""}, "aws"),
+        ({"Arn": None}, "aws"),
+        ({"Arn": "not-an-arn"}, "aws"),
+    ],
+)
+def test_caller_identity_partition_handles_incomplete_arns(
+    caller_identity, expected_partition
+):
+    assert bedrock_app._caller_identity_partition(caller_identity) == expected_partition
 
 
 def assert_could_not_assess_finding(finding):

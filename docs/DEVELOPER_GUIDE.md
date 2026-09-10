@@ -98,7 +98,7 @@ The AI/ML Security Assessment Framework is a serverless, multi-account security 
 
 - **AWS CloudFormation StackSets Deployment**: Deploys `AIMLSecurityMemberRole` to all target accounts
 - **Cross-Account Trust**: Establishes trust relationship with the central assessment account
-- **Assessment and Deployment Permissions**: Grants read-oriented service permissions for assessment checks and deployment permissions needed for CodeBuild to create or update per-account SAM stacks
+- **Deployment Permissions**: Grants only the cross-account deployment, Step Functions execution-polling, and report-retrieval permissions needed by CodeBuild to create or update per-account SAM stacks. The SAM-created Lambda execution roles hold assessment-service API permissions.
 
 #### Step 2: Central Infrastructure (`2-aiml-security-codebuild.yaml`)
 
@@ -318,7 +318,7 @@ The Responsible AI GRC assessment Lambda is different. It is deployed in both SA
 **Additional Functions:**
 
 - **AWS IAM Permission Caching**: Pre-fetches AWS IAM policies to optimize assessment (global, runs once)
-- **Cleanup Bucket**: Removes old assessment data
+- **Cleanup Bucket**: Removes current assessment objects before each run. Version history and delete markers remain until removed manually using the [Cleanup Guide](CLEANUP.md).
 - **Resolve Regions**: Resolves target regions from `TargetRegions` parameter for the Map state
 - **Generate Consolidated Report**: Creates HTML report from CSV findings with region filtering
 
@@ -448,8 +448,8 @@ def check_new_service_security(permission_cache, region: str = ""):
 
 ```txt
 # requirements.txt
-boto3>=1.26.0
-botocore>=1.29.0
+boto3==1.43.85
+botocore==1.43.85
 ```
 
 1. **Create Schema File**:
@@ -626,7 +626,7 @@ Most day-to-day contributions add or update individual security checks inside th
    - `ruff check` and `ruff format --check` only on the changed `.py` files (match CI scope).
    - The three required pytest sessions: `tests/` (which includes `test_consolidate_responsible_ai_grc.py`), `responsible_ai_grc_tests/`, and the report-pipeline session.
    - `cfn-lint` on any edited templates.
-   - Full review checklist in [AGENTS.md](../AGENTS.md) (API names, IAM in all 5 locations, status semantics, mapping drift, CSV schema, etc.).
+   - Full review checklist in [AGENTS.md](../AGENTS.md): validate each new assessment API grant in both SAM templates on the owning Lambda role, and do not add assessment-runtime APIs to deployment or member roles. Also review API names, status semantics, mapping drift, CSV schema, and the remaining checklist items.
 
 9. **Generate and verify the HTML report** (mandatory before opening a PR): Follow the Report Verification steps in the [Testing Your Extensions](#4-report-verification-required-before-opening-a-pr) section. Open the generated reports and confirm your new check renders correctly in the table, sidebar, filters, and both light/dark modes.
 

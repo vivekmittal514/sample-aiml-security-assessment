@@ -38,6 +38,28 @@ sys.modules["sagemaker_app"] = sagemaker_app
 _spec.loader.exec_module(sagemaker_app)
 
 
+@pytest.mark.parametrize(
+    ("caller_identity", "expected_partition"),
+    [
+        ({"Arn": "arn:aws:sts::123456789012:assumed-role/test/session"}, "aws"),
+        (
+            {"Arn": "arn:aws-us-gov:sts::123456789012:assumed-role/test/session"},
+            "aws-us-gov",
+        ),
+        ({}, "aws"),
+        ({"Arn": ""}, "aws"),
+        ({"Arn": None}, "aws"),
+        ({"Arn": "not-an-arn"}, "aws"),
+    ],
+)
+def test_caller_identity_partition_handles_incomplete_arns(
+    caller_identity, expected_partition
+):
+    assert (
+        sagemaker_app._caller_identity_partition(caller_identity) == expected_partition
+    )
+
+
 def assert_could_not_assess_finding(finding):
     assert finding["Status"] == "N/A"
     assert finding["Severity"] == "Informational"

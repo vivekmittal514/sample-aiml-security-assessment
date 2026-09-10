@@ -32,6 +32,18 @@ logger.setLevel(logging.ERROR)
 # duplicate findings when scanning multiple regions.
 GLOBAL_REGION_LABEL = "Global"
 
+
+def _caller_identity_partition(caller_identity: Dict[str, Any]) -> str:
+    """Return the STS ARN partition, defaulting safely for incomplete identities."""
+    arn = caller_identity.get("Arn")
+    if not isinstance(arn, str):
+        return "aws"
+    parts = arn.split(":", 2)
+    if len(parts) < 3 or parts[0] != "arn" or not parts[1]:
+        return "aws"
+    return parts[1]
+
+
 AGENTIC_AI_LENS_URL = (
     "https://docs.aws.amazon.com/wellarchitected/latest/agentic-ai-lens/"
     "agentic-ai-lens.html"
@@ -685,7 +697,7 @@ def check_stale_bedrock_access(permission_cache, region: str = "") -> Dict[str, 
         sts_client = boto3.client("sts", config=boto3_config)
         caller_identity = sts_client.get_caller_identity()
         account_id = caller_identity["Account"]
-        partition = caller_identity.get("Arn", "arn:aws:sts::").split(":", 2)[1]
+        partition = _caller_identity_partition(caller_identity)
 
         identities_to_check = []
 

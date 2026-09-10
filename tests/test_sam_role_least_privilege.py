@@ -156,6 +156,7 @@ _EXPECTED_ACTIONS = {
         "inspector2:BatchGetAccountStatus",
         "kms:DescribeKey",
         "lambda:GetFunction",
+        "lambda:ListFunctions",
         "organizations:DescribeOrganization",
         "organizations:ListPolicies",
         "organizations:ListRoots",
@@ -643,6 +644,9 @@ def test_agentcore_resource_reads_and_metric_writes_are_constrained(template):
     service_role = _statement_block(
         template, "AgentCoreSecurityAssessmentFunction", "IAMRolePermissions"
     )
+    assert (
+        "iam::${AWS::AccountId}:role/AWSServiceRoleForBedrockAgentCoreNetwork"
+    ) in service_role
     assert (
         "iam::${AWS::AccountId}:role/aws-service-role/"
         "network.bedrock-agentcore.amazonaws.com/"

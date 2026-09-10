@@ -451,6 +451,12 @@ Resources:
                 - cloudtrail:GetEventSelectors
                 - cloudtrail:GetTrailStatus
               Resource: '*'
+            - Sid: LambdaInventoryPermissions
+              Effect: Allow
+              Action:
+                # BR-33 inventories Lambda functions before checking Inspector status.
+                - lambda:ListFunctions
+              Resource: '*'
             - Sid: LambdaPermissions
               Effect: Allow
               Action:
@@ -665,7 +671,12 @@ Resources:
               Effect: Allow
               Action:
                 - iam:GetRole
-              Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/network.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreNetwork'
+              Resource:
+                # GetRole accepts only RoleName; retain the root-path form for
+                # the missing-role lookup.
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/AWSServiceRoleForBedrockAgentCoreNetwork'
+                # Once present, the AgentCore SLR has this service-linked path.
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/network.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreNetwork'
             - Sid: EC2Permissions
               Effect: Allow
               Action:

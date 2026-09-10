@@ -100,10 +100,25 @@ section.
   SAM-generated `AIMLAssessmentStateMachine-*` state machines. The
   least-privilege policies now explicitly include the generated state-machine
   and execution ARN patterns without widening access to unrelated workflows.
+- Restore `lambda:ListFunctions` to the Bedrock assessment Lambda role so
+  BR-33 can inventory Bedrock-related Lambda functions before checking Amazon
+  Inspector code-scanning status, instead of reporting an access-denied
+  assessment as informational `N/A`.
+- Permit the AgentCore service-linked-role check to return the intended missing
+  role finding by authorizing `iam:GetRole` for both the root-path lookup ARN
+  and the service-linked-role ARN.
+- Keep Bedrock, SageMaker, AgentCore, and Agent Registry stale-access checks
+  running when an incomplete or malformed STS caller ARN is returned by
+  falling back safely to the standard AWS partition.
 - Prevented `FS-22` from flagging assessment-created roles solely for Bedrock
   inventory APIs that AWS requires to use `Resource: "*"`. It still flags
-  wildcard Bedrock actions and exact Knowledge Base actions that support ARN
-  scoping but remain unscoped.
+  wildcard Bedrock actions and exact Bedrock actions with supported resource
+  scoping that remain unscoped. Corrected the FS-22 action catalog so
+  non-scopable query actions do not create false positives and actions with
+  supported Bedrock resource scoping—including data-source, association,
+  resource-policy, tag, and log-delivery actions—remain covered; remediation
+  now identifies the supported resource ARN(s)
+  instead of incorrectly prescribing a Knowledge Base ARN for every action.
 - Calculate report pass rates from unique direct-service controls instead of
   resource-row counts: any failed assessable row fails its `Check_ID`, controls
   pass only when all assessable rows pass, and N/A rows are excluded.

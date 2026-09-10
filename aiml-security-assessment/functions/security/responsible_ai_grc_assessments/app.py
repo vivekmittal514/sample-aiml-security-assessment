@@ -2667,24 +2667,33 @@ def _is_overbroad_kb_action(action: Any) -> bool:
 
 _KB_ACTIONS_WITH_RESOURCE_SCOPE = frozenset(
     {
+        # Amazon Bedrock service authorization reference: actions with a
+        # knowledge-base resource type can be scoped to Knowledge Base ARNs.
+        "bedrock:allowvendedlogdeliveryforresource",
+        "bedrock:associateagentknowledgebase",
+        "bedrock:createdatasource",
+        "bedrock:deletedatasource",
         "bedrock:deleteknowledgebase",
         "bedrock:deleteknowledgebasedocuments",
-        "bedrock:deletedatasource",
-        "bedrock:generatequery",
+        "bedrock:deleteresourcepolicy",
+        "bedrock:disassociateagentknowledgebase",
+        "bedrock:getagentknowledgebase",
         "bedrock:getdatasource",
         "bedrock:getingestionjob",
         "bedrock:getknowledgebase",
         "bedrock:getknowledgebasedocuments",
+        "bedrock:getresourcepolicy",
         "bedrock:ingestknowledgebasedocuments",
         "bedrock:listdatasources",
         "bedrock:listingestionjobs",
         "bedrock:listknowledgebasedocuments",
+        "bedrock:listtagsforresource",
+        "bedrock:putresourcepolicy",
         "bedrock:retrieve",
-        "bedrock:retrieveandgenerate",
-        "bedrock:retrieveandgeneratestream",
         "bedrock:startingestionjob",
         "bedrock:stopingestionjob",
         "bedrock:updatedatasource",
+        "bedrock:updateagentknowledgebase",
         "bedrock:updateknowledgebase",
     }
 )
@@ -2760,7 +2769,7 @@ def check_knowledge_base_iam_least_privilege(permission_cache) -> Dict[str, Any]
                         ):
                             issues.append(
                                 f"Role '{role_name}' allows '{action}' on Resource '*' "
-                                "(no ARN scoping to specific Knowledge Bases)"
+                                "(no ARN scoping to supported Bedrock resources)"
                             )
 
         if issues:
@@ -2775,10 +2784,9 @@ def check_knowledge_base_iam_least_privilege(permission_cache) -> Dict[str, Any]
                     ),
                     resolution=(
                         "Replace wildcard Bedrock actions (e.g. bedrock:*) with "
-                        "specific actions such as bedrock:Retrieve, "
-                        "bedrock:RetrieveAndGenerate, and scope Knowledge Base "
-                        "actions to specific Knowledge Base ARNs instead of "
-                        "Resource '*'."
+                        "specific actions, and scope each action to its supported "
+                        "Bedrock resource ARN(s) (such as a Knowledge Base or "
+                        "Agent ARN) instead of Resource '*'."
                     ),
                     reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam-awsmanpol.html",
                     severity="High",

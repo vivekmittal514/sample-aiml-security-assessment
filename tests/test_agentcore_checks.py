@@ -44,6 +44,28 @@ sys.modules["agentcore_app"] = agentcore_app
 _spec.loader.exec_module(agentcore_app)
 
 
+@pytest.mark.parametrize(
+    ("caller_identity", "expected_partition"),
+    [
+        ({"Arn": "arn:aws:sts::123456789012:assumed-role/test/session"}, "aws"),
+        (
+            {"Arn": "arn:aws-us-gov:sts::123456789012:assumed-role/test/session"},
+            "aws-us-gov",
+        ),
+        ({}, "aws"),
+        ({"Arn": ""}, "aws"),
+        ({"Arn": None}, "aws"),
+        ({"Arn": "not-an-arn"}, "aws"),
+    ],
+)
+def test_caller_identity_partition_handles_incomplete_arns(
+    caller_identity, expected_partition
+):
+    assert (
+        agentcore_app._caller_identity_partition(caller_identity) == expected_partition
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helper: patch AgentCore module-level clients
 # ---------------------------------------------------------------------------

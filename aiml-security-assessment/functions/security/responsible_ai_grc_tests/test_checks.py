@@ -17,6 +17,7 @@ import json
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
 from botocore.exceptions import ClientError
 
 from .support import finserv_app as app
@@ -68,6 +69,70 @@ def _assert_advisory_retag(result, check_id):
         assert r["Finding"].startswith("ADVISORY: "), (
             f"{check_id} Finding={r['Finding']}"
         )
+
+
+_KB_ACTIONS_WITH_RESOURCE_SCOPE = frozenset(
+    {
+        "bedrock:allowvendedlogdeliveryforresource",
+        "bedrock:associateagentknowledgebase",
+        "bedrock:createdatasource",
+        "bedrock:deletedatasource",
+        "bedrock:deleteknowledgebase",
+        "bedrock:deleteknowledgebasedocuments",
+        "bedrock:deleteresourcepolicy",
+        "bedrock:disassociateagentknowledgebase",
+        "bedrock:getagentknowledgebase",
+        "bedrock:getdatasource",
+        "bedrock:getingestionjob",
+        "bedrock:getknowledgebase",
+        "bedrock:getknowledgebasedocuments",
+        "bedrock:getresourcepolicy",
+        "bedrock:ingestknowledgebasedocuments",
+        "bedrock:listdatasources",
+        "bedrock:listingestionjobs",
+        "bedrock:listknowledgebasedocuments",
+        "bedrock:listtagsforresource",
+        "bedrock:putresourcepolicy",
+        "bedrock:retrieve",
+        "bedrock:startingestionjob",
+        "bedrock:stopingestionjob",
+        "bedrock:updatedatasource",
+        "bedrock:updateagentknowledgebase",
+        "bedrock:updateknowledgebase",
+    }
+)
+
+_KB_ACTIONS_WITHOUT_RESOURCE_SCOPE = frozenset(
+    {
+        "bedrock:generatequery",
+        "bedrock:retrieveandgenerate",
+        "bedrock:retrieveandgeneratestream",
+    }
+)
+
+
+def _permission_cache_for_kb_action(action, resource="*"):
+    return {
+        "role_permissions": {
+            "KBRole": {
+                "attached_policies": [],
+                "inline_policies": [
+                    {
+                        "name": "KBInline",
+                        "document": {
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": action,
+                                    "Resource": resource,
+                                }
+                            ]
+                        },
+                    }
+                ],
+            }
+        }
+    }
 
 
 # =========================================================================
@@ -1301,33 +1366,44 @@ class TestFS22KnowledgeBaseIamLeastPrivilege:
             for r in result["csv_data"]
         )
 
-    def test_unscoped_resource_flagged(self):
-        """REQ-14/D: a scoped action on Resource '*' (no ARN scoping) is flagged."""
-        cache = {
-            "role_permissions": {
-                "KBRole": {
-                    "attached_policies": [],
-                    "inline_policies": [
-                        {
-                            "name": "KBInline",
-                            "document": {
-                                "Statement": [
-                                    {
-                                        "Effect": "Allow",
-                                        "Action": "bedrock:Retrieve",
-                                        "Resource": "*",
-                                    }
-                                ]
-                            },
-                        }
-                    ],
-                }
-            }
-        }
-        result = app.check_knowledge_base_iam_least_privilege(cache)
+    def test_resource_scope_action_matrix_matches_authorization_reference(self):
+        """Pin the full FS-22 action matrix to prevent false positives or gaps."""
+        assert app._KB_ACTIONS_WITH_RESOURCE_SCOPE == _KB_ACTIONS_WITH_RESOURCE_SCOPE
+
+    @pytest.mark.parametrize("action", sorted(_KB_ACTIONS_WITH_RESOURCE_SCOPE))
+    def test_unscoped_resource_scope_actions_are_flagged(self, action):
+        """Every KB-ARN-scopable action on Resource '*' is a finding."""
+        result = app.check_knowledge_base_iam_least_privilege(
+            _permission_cache_for_kb_action(action)
+        )
         _assert_finding_structure(result)
         assert result["status"] == "WARN"
-        assert any(r["Status"] == "Failed" for r in result["csv_data"])
+        failed_rows = [
+            row
+            for row in result["csv_data"]
+            if action in row["Finding_Details"] and row["Status"] == "Failed"
+        ]
+        assert failed_rows
+        assert (
+            "(no ARN scoping to supported Bedrock resources)"
+            in failed_rows[0]["Finding_Details"]
+        )
+        assert failed_rows[0]["Resolution"] == (
+            "Replace wildcard Bedrock actions (e.g. bedrock:*) with specific "
+            "actions, and scope each action to its supported Bedrock resource "
+            "ARN(s) (such as a Knowledge Base or Agent ARN) instead of "
+            "Resource '*'."
+        )
+
+    @pytest.mark.parametrize("action", sorted(_KB_ACTIONS_WITHOUT_RESOURCE_SCOPE))
+    def test_unscoped_non_scopable_actions_are_not_flagged(self, action):
+        """Actions without a KB resource type remain valid on Resource '*'."""
+        result = app.check_knowledge_base_iam_least_privilege(
+            _permission_cache_for_kb_action(action)
+        )
+        _assert_finding_structure(result)
+        assert result["status"] == "PASS"
+        assert all(row["Status"] != "Failed" for row in result["csv_data"])
 
     def test_global_inventory_actions_on_star_are_not_flagged(self):
         """AWS-required wildcard resources for account inventory are compliant."""
@@ -1406,7 +1482,7 @@ class TestFS22KnowledgeBaseIamLeastPrivilege:
                                         "Effect": "Allow",
                                         "Action": [
                                             "bedrock:Retrieve",
-                                            "bedrock:RetrieveAndGenerate",
+                                            "bedrock:GetKnowledgeBase",
                                         ],
                                         "Resource": "arn:aws:bedrock:us-east-1:111122223333:knowledge-base/kb-1",
                                     }

@@ -515,7 +515,7 @@ If per-account reports are missing, also check the SAM assessment stack's `Asses
 
 A: The security checks do not modify your AI/ML workloads or data. They query resource configuration and write assessment artifacts to framework-owned S3 buckets.
 
-The framework itself does create and manage its own deployment resources, including CloudFormation stacks, IAM roles, Lambda functions, Step Functions state machines, CodeBuild projects, S3 buckets, EventBridge rules, and optional SNS notifications. At the start of each assessment run, it also cleans old objects from its own SAM assessment bucket before writing the new report artifacts.
+The framework itself does create and manage its own deployment resources, including CloudFormation stacks, IAM roles, Lambda functions, Step Functions state machines, CodeBuild projects, S3 buckets, EventBridge rules, and optional SNS notifications. At the start of each assessment run, it removes current objects from its own SAM assessment bucket before writing new report artifacts. S3 version history and delete markers remain until removed manually; see the [Cleanup Guide](CLEANUP.md#emptying-and-deleting-versioned-s3-buckets).
 
 **Q: How long does an assessment take to run?**
 
