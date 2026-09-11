@@ -487,6 +487,15 @@ def _is_access_denied_client_error(error: Exception) -> bool:
     return error_code in {"AccessDenied", "AccessDeniedException"}
 
 
+def _is_valid_permissions_cache(cache: Any) -> bool:
+    """Return whether cache has the IAM inventory shape produced upstream."""
+    return (
+        isinstance(cache, dict)
+        and isinstance(cache.get("role_permissions"), dict)
+        and isinstance(cache.get("user_permissions"), dict)
+    )
+
+
 def get_permissions_cache(execution_id: str) -> Optional[Dict[str, Any]]:
     """
     Retrieve and parse the permissions cache JSON file from S3
@@ -511,6 +520,13 @@ def get_permissions_cache(execution_id: str) -> Optional[Dict[str, Any]]:
             # Read and parse the JSON content
             json_content = response["Body"].read().decode("utf-8")
             permissions_cache = json.loads(json_content)
+
+            if not _is_valid_permissions_cache(permissions_cache):
+                logger.error(
+                    "Permissions cache has an invalid schema for execution "
+                    f"{execution_id}"
+                )
+                return None
 
             logger.info(
                 f"Successfully retrieved permissions cache for execution {execution_id}"
@@ -538,6 +554,37 @@ def get_permissions_cache(execution_id: str) -> Optional[Dict[str, Any]]:
             f"Unexpected error retrieving permissions cache: {str(e)}", exc_info=True
         )
         return None
+
+
+def _permission_cache_unavailable_result(
+    check_id: str, finding_name: str, region: str
+) -> Dict[str, Any]:
+    """Emit an explicit incomplete row for a cache-dependent Bedrock control."""
+    details = (
+        "The IAM permissions cache is missing, unreadable, or malformed, so this "
+        "identity-based control could not be assessed."
+    )
+    return {
+        "check_name": finding_name,
+        "status": "N/A",
+        "details": details,
+        "csv_data": [
+            create_finding(
+                check_id=check_id,
+                finding_name=f"{finding_name} Incomplete",
+                finding_details=details,
+                resolution=(
+                    "Review the IAM Permission Caching task and the execution-scoped "
+                    "permissions_cache_<execution-id>.json object, then rerun the "
+                    "assessment."
+                ),
+                reference="https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html",
+                severity="Informational",
+                status="N/A",
+                region=region,
+            )
+        ],
+    }
 
 
 def check_marketplace_subscription_access(
@@ -3222,7 +3269,12 @@ def check_bedrock_cross_account_guardrails(
                         finding_details=describe_api_error(
                             e, "Organizations policy check", region
                         ),
-                        resolution="Grant organizations:DescribeOrganization and organizations:ListPolicies permissions to the assessment role",
+                        resolution=(
+                            "Grant organizations:DescribeOrganization, "
+                            "organizations:ListRoots, organizations:ListPolicies, and "
+                            "organizations:ListTargetsForPolicy permissions to the "
+                            "assessment role"
+                        ),
                         reference="https://docs.aws.amazon.com/organizations/latest/userguide/orgs_permissions_overview.html",
                         severity="Medium",
                         status="N/A",
@@ -3462,8 +3514,8 @@ def check_bedrock_guardrail_tier(region: str = "") -> Dict[str, Any]:
                         ),
                         resolution="Grant bedrock:ListGuardrails and bedrock:GetGuardrail permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="Medium",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -3618,8 +3670,8 @@ def check_bedrock_custom_model_kms_encryption(region: str = "") -> Dict[str, Any
                         ),
                         resolution="Grant bedrock:ListCustomModels and bedrock:GetCustomModel permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="High",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -3823,8 +3875,8 @@ def check_bedrock_model_evaluations(region: str = "") -> Dict[str, Any]:
                         ),
                         resolution="Grant bedrock:ListEvaluationJobs permission to assess model evaluation practices",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="Medium",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -4030,10 +4082,10 @@ def check_bedrock_prompt_flow_validation(region: str = "") -> Dict[str, Any]:
                         finding_details=describe_api_error(
                             e, "Prompt flow check", region
                         ),
-                        resolution="Grant bedrock-agent:ListFlows and bedrock-agent:GetFlow permissions",
+                        resolution="Grant bedrock:ListFlows and bedrock:GetFlow permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="Medium",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -4281,10 +4333,10 @@ def check_bedrock_knowledge_base_kms_encryption(region: str = "") -> Dict[str, A
                         finding_details=describe_api_error(
                             e, "Knowledge base encryption check", region
                         ),
-                        resolution="Grant bedrock-agent:ListKnowledgeBases and bedrock-agent:GetKnowledgeBase permissions",
+                        resolution="Grant bedrock:ListKnowledgeBases and bedrock:GetKnowledgeBase permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="High",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -4570,10 +4622,10 @@ def check_bedrock_agent_action_group_iam(
                         finding_details=describe_api_error(
                             e, "Agent action group IAM check", region
                         ),
-                        resolution="Grant bedrock-agent:ListAgents, bedrock-agent:ListAgentActionGroups, bedrock-agent:GetAgentActionGroup, and lambda:GetFunction permissions",
+                        resolution="Grant bedrock:ListAgents, bedrock:ListAgentActionGroups, bedrock:GetAgentActionGroup, and lambda:GetFunction permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="High",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -4817,8 +4869,8 @@ def check_bedrock_service_quotas_throttling(region: str = "") -> Dict[str, Any]:
                         ),
                         resolution="Grant servicequotas:ListServiceQuotas, servicequotas:GetServiceQuota, and servicequotas:GetAWSDefaultServiceQuota permissions",
                         reference="https://docs.aws.amazon.com/servicequotas/latest/userguide/identity-access-management.html",
-                        severity="Medium",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -5317,8 +5369,8 @@ def check_bedrock_guardrail_content_filters(
                         ),
                         resolution="Grant bedrock:ListGuardrails and bedrock:GetGuardrail permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="High",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -5494,8 +5546,8 @@ def check_bedrock_automated_reasoning_policy(region: str = "") -> Dict[str, Any]
                         ),
                         resolution="Grant bedrock:ListGuardrails and bedrock:GetGuardrail permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="Medium",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -5701,10 +5753,10 @@ def check_bedrock_rag_evaluation_jobs(region: str = "") -> Dict[str, Any]:
                         finding_details=describe_api_error(
                             e, "RAG evaluation check", region
                         ),
-                        resolution="Grant bedrock-agent:ListKnowledgeBases and bedrock:ListEvaluationJobs permissions",
+                        resolution="Grant bedrock:ListKnowledgeBases and bedrock:ListEvaluationJobs permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="Low",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -5884,8 +5936,8 @@ def check_bedrock_guardrail_pii_filters(region: str = "") -> Dict[str, Any]:
                         ),
                         resolution="Grant bedrock:ListGuardrails and bedrock:GetGuardrail permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="High",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -6066,8 +6118,8 @@ def check_bedrock_guardrail_contextual_grounding(region: str = "") -> Dict[str, 
                         ),
                         resolution="Grant bedrock:ListGuardrails and bedrock:GetGuardrail permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="Medium",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -6218,10 +6270,10 @@ def check_bedrock_agent_guardrail_association(region: str = "") -> Dict[str, Any
                         finding_details=describe_api_error(
                             e, "Agent guardrail association check", region
                         ),
-                        resolution="Grant bedrock-agent:ListAgents permission",
+                        resolution="Grant bedrock:ListAgents permission",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="High",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -6394,10 +6446,10 @@ def check_bedrock_agent_idle_session_ttl(region: str = "") -> Dict[str, Any]:
                         finding_details=describe_api_error(
                             e, "Agent idle session TTL check", region
                         ),
-                        resolution="Grant bedrock-agent:ListAgents and bedrock-agent:GetAgent permissions",
+                        resolution="Grant bedrock:ListAgents and bedrock:GetAgent permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="Low",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -6578,8 +6630,8 @@ def check_bedrock_imported_model_kms_encryption(region: str = "") -> Dict[str, A
                         ),
                         resolution="Grant bedrock:ListImportedModels and bedrock:GetImportedModel permissions",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="High",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -6752,8 +6804,8 @@ def check_bedrock_batch_inference_output_encryption(
                         ),
                         resolution="Grant bedrock:ListModelInvocationJobs permission",
                         reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
-                        severity="Medium",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -6887,8 +6939,8 @@ def check_bedrock_cloudwatch_alarms(region: str = "") -> Dict[str, Any]:
                         ),
                         resolution="Grant cloudwatch:DescribeAlarms permission to the assessment role",
                         reference="https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/security_iam_id-based-policy-examples.html",
-                        severity="Medium",
-                        status="Failed",
+                        severity="Informational",
+                        status="N/A",
                         region=region,
                     )
                 )
@@ -7885,30 +7937,48 @@ def lambda_handler(event, context):
         logger.info("Initializing IAM permission cache")
         permission_cache = get_permissions_cache(execution_id)
 
-        if not permission_cache:
+        if not _is_valid_permissions_cache(permission_cache):
             logger.error(
-                "Permission cache not found - IAM permission caching may have failed"
+                "Permission cache unavailable - IAM permission caching may have failed"
             )
-            permission_cache = {"role_permissions": {}, "user_permissions": {}}
+            permission_cache = None
 
         # Run global IAM-only checks once (on the primary region) so the same role
         # violations are not reported once per scanned region. These run before the
         # regional availability gate so they are still emitted even if Bedrock is
         # not available in the primary region.
         if is_primary_region:
-            logger.info("Running global AmazonBedrockFullAccess check (BR-01)")
-            all_findings.append(
-                check_bedrock_full_access_roles(
-                    permission_cache, region=GLOBAL_REGION_LABEL
+            if permission_cache is None:
+                all_findings.extend(
+                    [
+                        _permission_cache_unavailable_result(
+                            "BR-01",
+                            "AmazonBedrockFullAccess Role Check",
+                            GLOBAL_REGION_LABEL,
+                        ),
+                        _permission_cache_unavailable_result(
+                            "BR-03",
+                            "Marketplace Subscription Access Check",
+                            GLOBAL_REGION_LABEL,
+                        ),
+                    ]
                 )
-            )
+            else:
+                logger.info("Running global AmazonBedrockFullAccess check (BR-01)")
+                all_findings.append(
+                    check_bedrock_full_access_roles(
+                        permission_cache, region=GLOBAL_REGION_LABEL
+                    )
+                )
 
-            logger.info("Running global marketplace subscription access check (BR-03)")
-            all_findings.append(
-                check_marketplace_subscription_access(
-                    permission_cache, region=GLOBAL_REGION_LABEL
+                logger.info(
+                    "Running global marketplace subscription access check (BR-03)"
                 )
-            )
+                all_findings.append(
+                    check_marketplace_subscription_access(
+                        permission_cache, region=GLOBAL_REGION_LABEL
+                    )
+                )
 
             # logger.info("Running global stale Bedrock access check (BR-14)")
             # all_findings.append(
@@ -7975,8 +8045,12 @@ def lambda_handler(event, context):
 
         # Run regional checks using the cached permissions
         logger.info("Running Bedrock access and VPC endpoints check")
-        bedrock_access_vpc_findings = check_bedrock_access_and_vpc_endpoints(
-            permission_cache, region=region
+        bedrock_access_vpc_findings = (
+            _permission_cache_unavailable_result(
+                "BR-02", "Bedrock Access and VPC Endpoint Check", region
+            )
+            if permission_cache is None
+            else check_bedrock_access_and_vpc_endpoints(permission_cache, region=region)
         )
         all_findings.append(bedrock_access_vpc_findings)
 
@@ -7999,8 +8073,12 @@ def lambda_handler(event, context):
         all_findings.append(bedrock_prompt_management_findings)
 
         logger.info("Running Bedrock agent IAM roles check")
-        bedrock_agent_roles_findings = check_bedrock_agent_roles(
-            permission_cache, region=region
+        bedrock_agent_roles_findings = (
+            _permission_cache_unavailable_result(
+                "BR-08", "Bedrock Agent IAM Roles Check", region
+            )
+            if permission_cache is None
+            else check_bedrock_agent_roles(permission_cache, region=region)
         )
         all_findings.append(bedrock_agent_roles_findings)
 
@@ -8009,8 +8087,14 @@ def lambda_handler(event, context):
         all_findings.append(kb_encryption_findings)
 
         logger.info("Running Bedrock Guardrail IAM enforcement check")
-        guardrail_iam_findings = check_bedrock_guardrail_iam_enforcement(
-            permission_cache, region=region
+        guardrail_iam_findings = (
+            _permission_cache_unavailable_result(
+                "BR-10", "Bedrock Guardrail IAM Enforcement Check", region
+            )
+            if permission_cache is None
+            else check_bedrock_guardrail_iam_enforcement(
+                permission_cache, region=region
+            )
         )
         all_findings.append(guardrail_iam_findings)
 
@@ -8067,8 +8151,14 @@ def lambda_handler(event, context):
         all_findings.append(kb_kms_findings)
 
         logger.info("Running agent action group IAM least privilege check (BR-21)")
-        agent_action_group_iam_findings = check_bedrock_agent_action_group_iam(
-            region=region, permission_cache=permission_cache
+        agent_action_group_iam_findings = (
+            _permission_cache_unavailable_result(
+                "BR-21", "Agent Action Group IAM Least Privilege Check", region
+            )
+            if permission_cache is None
+            else check_bedrock_agent_action_group_iam(
+                region=region, permission_cache=permission_cache
+            )
         )
         all_findings.append(agent_action_group_iam_findings)
 

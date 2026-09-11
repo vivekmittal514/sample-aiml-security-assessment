@@ -626,7 +626,6 @@ def test_agentcore_resource_reads_and_metric_writes_are_constrained(template):
         "bedrock-agentcore:GetAgentRuntime",
         "bedrock-agentcore:GetGateway",
         "bedrock-agentcore:GetResourcePolicy",
-        "bedrock-agentcore:GetTokenVault",
         "bedrock-agentcore:ListPolicies",
     ):
         assert action in reads
@@ -635,11 +634,19 @@ def test_agentcore_resource_reads_and_metric_writes_are_constrained(template):
         "bedrock-agentcore:*:${AWS::AccountId}:runtime/*/runtime-endpoint/*",
         "bedrock-agentcore:*:${AWS::AccountId}:gateway/*",
         "bedrock-agentcore:*:${AWS::AccountId}:policy-engine/*",
-        "bedrock-agentcore:*:${AWS::AccountId}:token-vault/*",
         "bedrock-agentcore:*:${AWS::AccountId}:online-evaluation-config/*",
     ):
         assert resource in reads
     assert not re.search(r"Resource:\s+['\"]\*['\"]", reads)
+
+    token_vault = _statement_block(
+        template,
+        "AgentCoreSecurityAssessmentFunction",
+        "AgentCoreTokenVaultRead",
+    )
+    assert "bedrock-agentcore:GetTokenVault" in token_vault
+    assert re.search(r"Resource:\s+['\"]\*['\"]", token_vault)
+    assert "token-vault/" not in token_vault
 
     service_role = _statement_block(
         template, "AgentCoreSecurityAssessmentFunction", "IAMRolePermissions"

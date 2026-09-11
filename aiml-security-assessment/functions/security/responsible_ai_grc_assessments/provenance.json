@@ -259,7 +259,7 @@
       "derivation_type": "direct-derived",
       "source_excerpt_summary": "\"grant only the minimum permissions required\"; \"Define and enforce explicit action boundaries in the agent configuration\".",
       "derivation_rationale": null,
-      "inspected_aws_evidence": "Calls `ListAgents` and `GetAgent` (via the `bedrock-agent` boto3 client; IAM actions are `bedrock:ListAgents` and `bedrock:GetAgent`) to retrieve each agent's `agentResourceRoleArn`. Resolves the role name and inspects attached and inline policy documents from the permissions cache for wildcard Allow statements.",
+      "inspected_aws_evidence": "Calls `ListAgents` and `GetAgent` (via the `bedrock-agent` boto3 client; IAM actions are `bedrock:ListAgents` and `bedrock:GetAgent`) to retrieve each agent's `agentResourceRoleArn`. Resolves the role name and inspects attached and inline policy documents from the permissions cache for wildcard Allow statements. A missing, unreadable, or malformed cache produces an informational `N/A` incomplete-assessment row.",
       "unsupported_assertions": [],
       "manual_review_requirements": [],
       "implementing_functions": [
@@ -433,7 +433,7 @@
       "derivation_type": "direct-derived",
       "source_excerpt_summary": "\"Implement an allow-list of models using a Service Control Policy (SCP) for your AWS organization.\"",
       "derivation_rationale": null,
-      "inspected_aws_evidence": "Calls `organizations:ListPolicies(Filter=SERVICE_CONTROL_POLICY)` and inspects each SCP document for Deny statements on `bedrock:InvokeModel*` with `StringNotEquals` conditions on `bedrock:ModelId`. Flags if no SCP restricts model access.",
+      "inspected_aws_evidence": "Calls `organizations:ListPolicies(Filter=SERVICE_CONTROL_POLICY)` and `organizations:DescribePolicy`, then reports whether any SCP document references Bedrock. Operators must verify the referenced SCPs use valid ARN-scoped deny semantics.",
       "unsupported_assertions": [],
       "manual_review_requirements": [],
       "implementing_functions": [
@@ -690,7 +690,7 @@
       "derivation_type": "direct-derived",
       "source_excerpt_summary": "\"Apply the principle of least privilege to control access to your vector and embedding database. Only grant users and services the minimum permissions they need to perform their tasks.\"",
       "derivation_rationale": null,
-      "inspected_aws_evidence": "Inspects the permissions cache for all IAM roles. Flags wildcard or partial-wildcard Bedrock Allow statements, plus exact Bedrock actions that support resource-level authorization but are granted on `Resource: \"*\"`. Account-level inventory APIs that AWS requires to use a wildcard resource, such as `ListKnowledgeBases`, are not treated as overbroad. Note: Bedrock agent and KB operations use the single IAM service prefix `bedrock:` (not `bedrock-agent:`) — the `bedrock-agent` token refers to the boto3 SDK client name, not the IAM action prefix.",
+      "inspected_aws_evidence": "Inspects the permissions cache for all IAM roles. Flags wildcard or partial-wildcard Bedrock Allow statements, plus exact Bedrock actions that support resource-level authorization but are granted on `Resource: \"*\"`. Account-level inventory APIs that AWS requires to use a wildcard resource, such as `ListKnowledgeBases`, are not treated as overbroad. A missing, unreadable, or malformed cache produces an informational `N/A` incomplete-assessment row. Note: Bedrock agent and KB operations use the single IAM service prefix `bedrock:` (not `bedrock-agent:`) — the `bedrock-agent` token refers to the ",
       "unsupported_assertions": [],
       "manual_review_requirements": [],
       "implementing_functions": [

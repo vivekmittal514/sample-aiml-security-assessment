@@ -33,12 +33,16 @@ repeat of this exact bug class (grant landed on the wrong function) fails the
 suite instead of shipping silently.
 """
 
+import ast
 import os
 import re
 
 import pytest
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SECURITY_FUNCTIONS_ROOT = os.path.join(
+    _REPO_ROOT, "aiml-security-assessment", "functions", "security"
+)
 
 _TEMPLATES = [
     os.path.join(_REPO_ROOT, "aiml-security-assessment", "template.yaml"),
@@ -448,3 +452,217 @@ def test_invalid_prefix_guard_detects_a_bad_action():
         "bedrock-agentcore-control:GetResourcePolicy",
         "bedrock-agentcore:GetGatewayResourcePolicy",
     ]
+
+
+def test_runtime_guidance_does_not_use_invalid_iam_identifiers():
+    """Remediation text must use valid IAM prefixes, actions, and condition keys."""
+    invalid_identifiers = {
+        "bedrock-agent:": (
+            "Bedrock Agents APIs authorize through the bedrock: IAM namespace"
+        ),
+        "bedrock:ModelId": (
+            "Bedrock model allowlists use Resource or NotResource model ARNs"
+        ),
+        "Grant sts:GetCallerIdentity": (
+            "STS GetCallerIdentity does not require an IAM Allow permission"
+        ),
+    }
+    violations = {}
+    for root, directories, filenames in os.walk(_SECURITY_FUNCTIONS_ROOT):
+        directories[:] = [
+            directory
+            for directory in directories
+            if directory != "__pycache__" and not directory.endswith("_tests")
+        ]
+        for filename in filenames:
+            if not filename.endswith(".py") or filename.startswith("test"):
+                continue
+            path = os.path.join(root, filename)
+            with open(path, encoding="utf-8") as source:
+                for line_number, line in enumerate(source, start=1):
+                    for identifier in invalid_identifiers:
+                        if identifier in line:
+                            violations.setdefault(identifier, []).append(
+                                f"{os.path.relpath(path, _REPO_ROOT)}:{line_number}"
+                            )
+
+    assert not violations, (
+        "Runtime guidance uses invalid IAM identifiers: "
+        + "; ".join(
+            f"{identifier} at {locations} ({invalid_identifiers[identifier]})"
+            for identifier, locations in violations.items()
+        )
+    )
+
+
+# Every IAM action below was checked against the corresponding AWS Service
+# Authorization Reference through AWS Knowledge on 2026-09-11. Condition keys
+# and non-IAM event names are classified separately so they are not mistaken
+# for permissions. A new IAM-shaped token in remediation text must be reviewed
+# and added deliberately.
+_VERIFIED_REMEDIATION_IAM_ACTIONS = {
+    "aoss:ListCollections",
+    "agent-registry:GetRegistry",
+    "agent-registry:ListRegistries",
+    "agent-registry:ListRegistryRecords",
+    "bedrock-agentcore:GetAgentRuntime",
+    "bedrock-agentcore:GetBrowser",
+    "bedrock-agentcore:GetCodeInterpreter",
+    "bedrock-agentcore:GetGateway",
+    "bedrock-agentcore:GetOnlineEvaluationConfig",
+    "bedrock-agentcore:GetResourcePolicy",
+    "bedrock-agentcore:GetTokenVault",
+    "bedrock-agentcore:ListAgentRuntimes",
+    "bedrock-agentcore:ListBrowsers",
+    "bedrock-agentcore:ListCodeInterpreters",
+    "bedrock-agentcore:ListGateways",
+    "bedrock-agentcore:ListOnlineEvaluationConfigs",
+    "bedrock-agentcore:ListPolicies",
+    "bedrock:CreateModelInvocationJob",
+    "bedrock:CreatePrompt",
+    "bedrock:GetAgent",
+    "bedrock:GetAgentActionGroup",
+    "bedrock:GetAutomatedReasoningPolicy",
+    "bedrock:GetCustomModel",
+    "bedrock:GetFlow",
+    "bedrock:GetGuardrail",
+    "bedrock:GetImportedModel",
+    "bedrock:GetKnowledgeBase",
+    "bedrock:GetMarketplaceModelEndpoint",
+    "bedrock:GetModelInvocationLoggingConfiguration",
+    "bedrock:InvokeModel",
+    "bedrock:InvokeModelWithResponseStream",
+    "bedrock:ListAgentActionGroups",
+    "bedrock:ListAgents",
+    "bedrock:ListAutomatedReasoningPolicies",
+    "bedrock:ListCustomModels",
+    "bedrock:ListEnforcedGuardrailsConfiguration",
+    "bedrock:ListEvaluationJobs",
+    "bedrock:ListFlows",
+    "bedrock:ListGuardrails",
+    "bedrock:ListImportedModels",
+    "bedrock:ListIngestionJobs",
+    "bedrock:ListKnowledgeBases",
+    "bedrock:ListModelInvocationJobs",
+    "bedrock:ListTagsForResource",
+    "cloudwatch:DescribeAlarms",
+    "config:DescribeConfigRules",
+    "iam:CreateServiceLinkedRole",
+    "iam:GenerateServiceLastAccessedDetails",
+    "iam:GetServiceLastAccessedDetails",
+    "inspector2:BatchGetAccountStatus",
+    "kms:CreateGrant",
+    "kms:Decrypt",
+    "kms:DescribeKey",
+    "kms:GenerateDataKey",
+    "lambda:GetFunction",
+    "lambda:ListFunctions",
+    "logs:DescribeAccountPolicies",
+    "logs:GetDataProtectionPolicy",
+    "macie2:GetAutomatedDiscoveryConfiguration",
+    "macie2:GetMacieSession",
+    "organizations:DescribeOrganization",
+    "organizations:ListPolicies",
+    "organizations:ListRoots",
+    "organizations:ListTargetsForPolicy",
+    "s3:GetEncryptionConfiguration",
+    "sagemaker:DescribeCluster",
+    "sagemaker:DescribeFeatureGroup",
+    "servicequotas:GetAWSDefaultServiceQuota",
+    "servicequotas:GetServiceQuota",
+    "servicequotas:ListAWSDefaultServiceQuotas",
+    "servicequotas:ListServiceQuotas",
+}
+
+_VERIFIED_REMEDIATION_CONDITION_KEYS = {
+    "bedrock:GuardrailIdentifier",
+    "iam:AWSServiceName",
+    "kms:ViaService",
+}
+
+_NON_IAM_REMEDIATION_TOKENS = {
+    "arn:PARTITION",
+    "s3:ObjectCreated",
+    "s3:ObjectModified",
+    "s3:ObjectRemoved",
+}
+
+
+def _runtime_resolution_iam_tokens():
+    token_pattern = re.compile(r"\b[a-z][a-z0-9-]*:[A-Z][A-Za-z0-9*]*")
+    found = {}
+
+    for root, directories, filenames in os.walk(_SECURITY_FUNCTIONS_ROOT):
+        directories[:] = [
+            directory
+            for directory in directories
+            if directory != "__pycache__" and not directory.endswith("_tests")
+        ]
+        for filename in filenames:
+            if filename != "app.py":
+                continue
+
+            path = os.path.join(root, filename)
+            with open(path, encoding="utf-8") as source_file:
+                source = source_file.read()
+            tree = ast.parse(source)
+
+            for node in ast.walk(tree):
+                resolution_values = []
+                if isinstance(node, ast.keyword) and node.arg == "resolution":
+                    resolution_values.append(node.value)
+                elif isinstance(node, ast.Dict):
+                    for key, value in zip(node.keys, node.values):
+                        if isinstance(key, ast.Constant) and key.value == "resolution":
+                            resolution_values.append(value)
+                elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                    targets = (
+                        node.targets if isinstance(node, ast.Assign) else [node.target]
+                    )
+                    if any(
+                        isinstance(target, ast.Name) and target.id == "resolution"
+                        for target in targets
+                    ):
+                        resolution_values.append(node.value)
+                elif (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "_error_resolution"
+                    and len(node.args) >= 2
+                ):
+                    resolution_values.append(node.args[1])
+                elif (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "_na"
+                    and len(node.args) >= 5
+                ):
+                    resolution_values.append(node.args[4])
+
+                for value in resolution_values:
+                    text = ast.get_source_segment(source, value) or ""
+                    for token in token_pattern.findall(text):
+                        found.setdefault(token, set()).add(
+                            f"{os.path.relpath(path, _REPO_ROOT)}:{value.lineno}"
+                        )
+
+    return found
+
+
+def test_every_runtime_remediation_iam_token_has_been_verified():
+    found = _runtime_resolution_iam_tokens()
+    classified = (
+        _VERIFIED_REMEDIATION_IAM_ACTIONS
+        | _VERIFIED_REMEDIATION_CONDITION_KEYS
+        | _NON_IAM_REMEDIATION_TOKENS
+    )
+    unexpected = {
+        token: locations
+        for token, locations in found.items()
+        if token not in classified
+    }
+
+    assert not unexpected, (
+        "Runtime remediation text contains IAM-shaped tokens that have not been "
+        f"verified against AWS Knowledge: {unexpected}"
+    )

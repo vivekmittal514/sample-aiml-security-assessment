@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 import re
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from botocore.exceptions import ClientError, EndpointConnectionError
 import pytest
@@ -396,6 +396,54 @@ class TestOWASPMappings:
         # The bad row is skipped with a warning; the good row still emits.
         assert len(rows) == 1
         assert rows[0]["Finding_Details"].endswith("well-formed row")
+
+
+# ---------------------------------------------------------------------------
+# Pagination helper tests
+# ---------------------------------------------------------------------------
+class TestPaginationHelper:
+    def test_list_all_items_stops_on_repeated_token(self):
+        client = MagicMock()
+        client.list_items.return_value = {
+            "Items": [{"id": "item-1"}],
+            "nextToken": "repeated",
+        }
+
+        items = owasp_app._list_all_items(
+            client, "list_items", "Items", max_results=100
+        )
+
+        assert items == [{"id": "item-1"}, {"id": "item-1"}]
+        assert client.list_items.call_count == 2
+
+    def test_list_all_items_preserves_service_token_conventions(self):
+        client = MagicMock()
+        client.list_functions.side_effect = [
+            {
+                "Functions": [{"FunctionName": "first"}],
+                "NextMarker": "page-2",
+            },
+            {"Functions": [{"FunctionName": "second"}]},
+        ]
+
+        items = owasp_app._list_all_items(
+            client,
+            "list_functions",
+            "Functions",
+            max_results_param="MaxItems",
+            token_param="Marker",
+            token_response_keys=("NextMarker",),
+            max_results=50,
+        )
+
+        assert items == [
+            {"FunctionName": "first"},
+            {"FunctionName": "second"},
+        ]
+        assert client.list_functions.call_args_list == [
+            call(MaxItems=50),
+            call(MaxItems=50, Marker="page-2"),
+        ]
 
 
 # ---------------------------------------------------------------------------

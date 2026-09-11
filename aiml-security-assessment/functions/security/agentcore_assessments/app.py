@@ -109,6 +109,66 @@ AGENTCORE_ONLINE_EVALUATION_REFERENCE_URL = (
     "https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/"
     "get-online-evaluations.html"
 )
+
+
+def _assessment_error_label(error: Exception) -> str:
+    """Return a report-safe label for an assessment/tooling error."""
+    if isinstance(error, ClientError):
+        code = error.response.get("Error", {}).get("Code", "")
+        if code:
+            return code
+    if isinstance(error, EndpointConnectionError):
+        return "EndpointConnectionError"
+    return type(error).__name__
+
+
+def _incomplete_check_finding(
+    check_id: str,
+    finding_name: str,
+    error: Exception,
+    reference: str,
+    region: str = "",
+) -> Dict[str, Any]:
+    """Represent a scanner failure without treating it as workload risk."""
+    return create_finding(
+        check_id=check_id,
+        finding_name=f"{finding_name} Incomplete",
+        finding_details=(
+            f"Could not assess {finding_name.lower()}. Assessment error: "
+            f"{_assessment_error_label(error)}."
+        ),
+        resolution=(
+            "No action is required on the assessed workload based on this result. "
+            "Resolve the assessment permission, API, or tooling error and rerun the "
+            "assessment."
+        ),
+        reference=reference,
+        severity=SeverityEnum.INFORMATIONAL,
+        status=StatusEnum.NA,
+        region=region,
+    )
+
+
+def _incomplete_check_findings(
+    check_ids: List[str],
+    finding_name: str,
+    error: Exception,
+    region: str,
+    reference: str = AGENTCORE_STARTER_TOOLKIT_URL,
+) -> List[Dict[str, Any]]:
+    """Create one visible incomplete row for every control a runner skipped."""
+    return [
+        _incomplete_check_finding(
+            check_id,
+            finding_name,
+            error,
+            reference,
+            region=region,
+        )
+        for check_id in check_ids
+    ]
+
+
 AGENTIC_AGENTCORE_CHECK_MAPPINGS = {
     "AC-01": {
         "check_id": "AG-15",
@@ -269,6 +329,15 @@ AUTHENTICATION_ERROR_CODES = {
 start_time = None
 
 
+def _is_valid_permissions_cache(cache: Any) -> bool:
+    """Return whether cache has the IAM inventory shape produced upstream."""
+    return (
+        isinstance(cache, dict)
+        and isinstance(cache.get("role_permissions"), dict)
+        and isinstance(cache.get("user_permissions"), dict)
+    )
+
+
 def get_permissions_cache(execution_id: str) -> Dict[str, Any]:
     """
     Retrieve IAM permissions cache from S3.
@@ -288,6 +357,8 @@ def get_permissions_cache(execution_id: str) -> Dict[str, Any]:
 
         response = s3_client.get_object(Bucket=BUCKET_NAME, Key=cache_key)
         cache_data = json.loads(response["Body"].read().decode("utf-8"))
+        if not _is_valid_permissions_cache(cache_data):
+            raise ValueError("Permissions cache has an invalid schema")
 
         logger.info(
             f"Successfully retrieved permissions cache with {len(cache_data.get('role_permissions', []))} roles"
@@ -296,11 +367,10 @@ def get_permissions_cache(execution_id: str) -> Dict[str, Any]:
 
     except ClientError as e:
         if e.response["Error"]["Code"] == "NoSuchKey":
-            logger.warning(f"Permissions cache not found: {cache_key}")
-            return {"role_permissions": [], "user_permissions": []}
+            logger.error(f"Permissions cache not found: {cache_key}")
         else:
             logger.error(f"Error retrieving permissions cache: {e}")
-            raise
+        raise
 
 
 def get_current_utc_date() -> str:
@@ -925,14 +995,11 @@ def check_agentcore_vpc_configuration() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error in VPC configuration check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-01",
                 finding_name="AgentCore VPC Configuration Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference=AGENTCORE_STARTER_TOOLKIT_URL,
-                severity=SeverityEnum.HIGH,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -1118,6 +1185,7 @@ def check_agentcore_full_access_roles(
 
         full_access_roles = []
         wildcard_roles = set()
+        policy_parse_errors = []
 
         # Iterate over role_permissions dict (role_name -> permissions)
         for role_name, permissions in role_permissions.items():
@@ -1145,6 +1213,7 @@ def check_agentcore_full_access_roles(
                     logger.warning(
                         f"Error parsing policy for role {role_name}: {error}"
                     )
+                    policy_parse_errors.append(error)
 
         # Generate findings for full access roles
         if full_access_roles:
@@ -1174,6 +1243,16 @@ def check_agentcore_full_access_roles(
                 )
             )
 
+        if policy_parse_errors:
+            findings.append(
+                _incomplete_check_finding(
+                    check_id="AC-02",
+                    finding_name="AgentCore IAM Full Access Check",
+                    error=policy_parse_errors[0],
+                    reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam-awsmanpol.html",
+                )
+            )
+
         # If no issues found - roles were evaluated and none were problematic
         if not findings:
             findings.append(
@@ -1191,14 +1270,11 @@ def check_agentcore_full_access_roles(
     except Exception as e:
         logger.error(f"Error in full access roles check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-02",
                 finding_name="AgentCore IAM Full Access Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security-iam-awsmanpol.html",
-                severity=SeverityEnum.HIGH,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -1492,14 +1568,11 @@ def check_stale_agentcore_access(
                 elif error_code == "AccessDenied":
                     logger.error(f"Access denied when checking {principal_name}: {e}")
                     findings.append(
-                        create_finding(
+                        _incomplete_check_finding(
                             check_id="AC-03",
                             finding_name="AgentCore Stale Access Check",
-                            finding_details=f"Access denied when checking service last accessed for {principal_type} {principal_name}",
-                            resolution="Ensure Lambda execution role has iam:GenerateServiceLastAccessedDetails and iam:GetServiceLastAccessedDetails permissions",
+                            error=e,
                             reference="https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_last-accessed.html",
-                            severity=SeverityEnum.HIGH,
-                            status=StatusEnum.FAILED,
                         )
                     )
                     return findings
@@ -1567,14 +1640,11 @@ def check_stale_agentcore_access(
     except Exception as e:
         logger.error(f"Error in stale access check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-03",
                 finding_name="AgentCore Stale Access Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference="https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_last-accessed.html",
-                severity=SeverityEnum.MEDIUM,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -1730,14 +1800,11 @@ def check_agentcore_observability() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error in observability check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-04",
                 finding_name="AgentCore Observability Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference=AGENTCORE_OBSERVABILITY_REFERENCE_URL,
-                severity=SeverityEnum.MEDIUM,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -1849,14 +1916,11 @@ def check_agentcore_encryption() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error in encryption check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-05",
                 finding_name="AgentCore Encryption Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference=AGENTCORE_DATA_ENCRYPTION_REFERENCE_URL,
-                severity=SeverityEnum.HIGH,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -2473,14 +2537,11 @@ def check_agentcore_memory_configuration() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error in memory configuration check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-07",
                 finding_name="AgentCore Memory Configuration Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference=AGENTCORE_MEMORY_REFERENCE_URL,
-                severity=SeverityEnum.MEDIUM,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -2629,14 +2690,11 @@ def check_agentcore_vpc_endpoints() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error in VPC endpoints check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-08",
                 finding_name="AgentCore VPC Endpoints Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/vpc.html",
-                severity=SeverityEnum.MEDIUM,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -2710,7 +2768,16 @@ def check_agentcore_service_linked_role() -> List[Dict[str, Any]]:
                     check_id="AC-09",
                     finding_name="AgentCore Service-Linked Role Missing",
                     finding_details=f"Service-linked role '{slr_name}' does not exist. VPC configuration for AgentCore Runtimes will fail without this role.",
-                    resolution="The service-linked role is automatically created when you configure VPC for an AgentCore Runtime. Ensure IAM permissions allow service-linked role creation.",
+                    resolution=(
+                        "Allow iam:CreateServiceLinkedRole for "
+                        "arn:PARTITION:iam::*:role/aws-service-role/"
+                        "network.bedrock-agentcore.amazonaws.com/"
+                        "AWSServiceRoleForBedrockAgentCoreNetwork, replacing PARTITION "
+                        "with the deployment partition, and add StringEquals for "
+                        "iam:AWSServiceName = network.bedrock-agentcore.amazonaws.com. "
+                        "Then configure VPC networking on an AgentCore Runtime so AWS "
+                        "creates the service-linked role."
+                    ),
                     reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-vpc.html",
                     severity=SeverityEnum.MEDIUM,
                     status=StatusEnum.FAILED,
@@ -2720,14 +2787,11 @@ def check_agentcore_service_linked_role() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error in service-linked role check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-09",
                 finding_name="AgentCore Service-Linked Role Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-vpc.html",
-                severity=SeverityEnum.MEDIUM,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -2982,14 +3046,11 @@ def check_agentcore_resource_based_policies() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error in resource-based policies check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-10",
                 finding_name="AgentCore Resource-Based Policies Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/security_iam_service-with-iam.html",
-                severity=SeverityEnum.MEDIUM,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -3077,10 +3138,18 @@ def check_agentcore_policy_engine_encryption() -> List[Dict[str, Any]]:
                         check_id="AC-11",
                         finding_name="AgentCore Policy Engine Encryption Missing",
                         finding_details=f"The following Policy Engines do not use customer-managed KMS encryption: {engine_list}. Policy data containing authorization rules is not protected with CMK.",
-                        resolution="1. Create a customer-managed KMS key with appropriate key policy\n"
-                        + "2. Grant Policy in AgentCore permissions via kms:CreateGrant\n"
-                        + "3. Create new policy engines with --encryption-key-arn parameter\n"
-                        + "Note: Encryption cannot be added to existing policy engines",
+                        resolution=(
+                            "1. Create a symmetric customer-managed KMS key.\n"
+                            "2. Grant the caller or account principal kms:CreateGrant, "
+                            "kms:Decrypt, kms:GenerateDataKey, and kms:DescribeKey in "
+                            "IAM and the key policy. Constrain access with kms:ViaService "
+                            "for bedrock-agentcore.<region>.amazonaws.com and the "
+                            "AgentCore policy-engine encryption context.\n"
+                            "3. Create replacement policy engines with the "
+                            "--encryption-key-arn parameter.\n"
+                            "Note: The encryption key cannot be added to or changed on "
+                            "an existing policy engine."
+                        ),
                         reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html",
                         severity=SeverityEnum.HIGH,
                         status=StatusEnum.FAILED,
@@ -3130,14 +3199,11 @@ def check_agentcore_policy_engine_encryption() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error in policy engine encryption check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-11",
                 finding_name="AgentCore Policy Engine Encryption Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html",
-                severity=SeverityEnum.MEDIUM,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -3278,14 +3344,11 @@ def check_agentcore_gateway_encryption() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error in gateway encryption check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-12",
                 finding_name="AgentCore Gateway Encryption Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/data-encryption.html",
-                severity=SeverityEnum.MEDIUM,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -3398,14 +3461,11 @@ def check_agentcore_gateway_configuration() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error in gateway configuration check: {e}")
         findings.append(
-            create_finding(
+            _incomplete_check_finding(
                 check_id="AC-13",
                 finding_name="AgentCore Gateway Configuration Check",
-                finding_details=f"Error during check: {str(e)}",
-                resolution="Investigate error and retry assessment",
+                error=e,
                 reference=AGENTCORE_GATEWAY_REFERENCE_URL,
-                severity=SeverityEnum.MEDIUM,
-                status=StatusEnum.FAILED,
             )
         )
 
@@ -3444,40 +3504,18 @@ def check_agentcore_gateway_agentic_security() -> List[Dict[str, Any]]:
             )
         return findings
 
+    gateway_check_ids = ["AG-24", "AG-25", "AG-26", "AG-27"]
+
     try:
         gateways = _agentcore_list_all("list_gateways", ["items", "gateways"])
-    except AttributeError:
-        return [
-            create_finding(
-                check_id="AG-24",
-                finding_name="Agentic AI Gateway Security Controls",
-                finding_details="Gateway APIs not yet available in bedrock-agentcore-control client",
-                resolution="Upgrade the AWS SDK/runtime when AgentCore Gateway APIs are available",
-                reference=AGENTCORE_GATEWAY_API_REFERENCE_URL,
-                severity=SeverityEnum.INFORMATIONAL,
-                status=StatusEnum.NA,
-            )
-        ]
-    except ClientError as e:
-        status = (
-            StatusEnum.NA if _is_access_denied_client_error(e) else StatusEnum.FAILED
+    except (AttributeError, ClientError) as error:
+        return _incomplete_check_findings(
+            gateway_check_ids,
+            "Agentic AI Gateway Security Controls",
+            error,
+            "",
+            reference=AGENTCORE_GATEWAY_API_REFERENCE_URL,
         )
-        severity = (
-            SeverityEnum.INFORMATIONAL
-            if status == StatusEnum.NA
-            else SeverityEnum.MEDIUM
-        )
-        return [
-            create_finding(
-                check_id="AG-24",
-                finding_name="Agentic AI Gateway Security Controls",
-                finding_details=f"Unable to list AgentCore Gateways: {str(e)}",
-                resolution="Grant bedrock-agentcore:ListGateways and retry the assessment",
-                reference=AGENTCORE_GATEWAY_API_REFERENCE_URL,
-                severity=severity,
-                status=status,
-            )
-        ]
 
     if not gateways:
         return [
@@ -3526,15 +3564,13 @@ def check_agentcore_gateway_agentic_security() -> List[Dict[str, Any]]:
         try:
             gateway_details = agentcore_client.get_gateway(gatewayIdentifier=gateway_id)
         except ClientError as e:
-            findings.append(
-                create_finding(
-                    check_id="AG-24",
-                    finding_name="Agentic AI Gateway Security Controls",
-                    finding_details=f"Unable to retrieve Gateway '{gateway_name}' ({gateway_id}): {str(e)}",
-                    resolution="Grant bedrock-agentcore:GetGateway and retry the assessment",
+            findings.extend(
+                _incomplete_check_findings(
+                    gateway_check_ids,
+                    f"Agentic AI Gateway Security Controls for {gateway_name}",
+                    e,
+                    "",
                     reference=AGENTCORE_GATEWAY_API_REFERENCE_URL,
-                    severity=SeverityEnum.INFORMATIONAL,
-                    status=StatusEnum.NA,
                 )
             )
             continue
@@ -3792,31 +3828,75 @@ def lambda_handler(event, context):
         all_findings = []
 
         # Retrieve permission cache (shared/global IAM data)
+        permission_cache_error = None
         try:
             permission_cache = get_permissions_cache(execution_id)
         except Exception as e:
             logger.warning(f"Failed to retrieve permission cache: {e}")
-            permission_cache = {"role_permissions": [], "user_permissions": []}
+            permission_cache = None
+            permission_cache_error = e
 
         # Run global IAM-only checks once (on the primary region) so the same role
         # violations are not reported once per scanned region. These run before the
         # regional availability gate so they are still emitted even if AgentCore is
         # not available in the primary region.
         if is_primary_region:
-            global_checks = [
-                (
-                    "IAM Full Access",
-                    lambda: check_agentcore_full_access_roles(permission_cache),
-                ),
-                (
-                    "Stale Access",
-                    lambda: check_stale_agentcore_access(permission_cache),
-                ),
-                # AC-09 inspects a global IAM service-linked role, so it is also
-                # run once on the primary region rather than per scanned region.
-                ("Service-Linked Role", check_agentcore_service_linked_role),
-            ]
-            for check_name, check_func in global_checks:
+            if permission_cache is None:
+                error_detail = (
+                    str(permission_cache_error) or type(permission_cache_error).__name__
+                )
+                for check_id, finding_name in (
+                    ("AC-02", "AgentCore IAM Full Access Check"),
+                    ("AC-03", "AgentCore Stale Access Check"),
+                ):
+                    all_findings.append(
+                        create_finding(
+                            check_id=check_id,
+                            finding_name=f"{finding_name} Incomplete",
+                            finding_details=(
+                                "The IAM permissions cache is missing, unreadable, "
+                                "or malformed, so this identity-based control could "
+                                f"not be assessed. Cache error: {error_detail}."
+                            ),
+                            resolution=(
+                                "Review the IAM Permission Caching task and the "
+                                "execution-scoped permissions_cache_<execution-id>.json "
+                                "object, then rerun the assessment."
+                            ),
+                            reference="https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html",
+                            severity=SeverityEnum.INFORMATIONAL,
+                            status=StatusEnum.NA,
+                            region=GLOBAL_REGION_LABEL,
+                        )
+                    )
+                global_checks = [
+                    (
+                        ["AC-09"],
+                        "Service-Linked Role",
+                        check_agentcore_service_linked_role,
+                    )
+                ]
+            else:
+                global_checks = [
+                    (
+                        ["AC-02"],
+                        "IAM Full Access",
+                        lambda: check_agentcore_full_access_roles(permission_cache),
+                    ),
+                    (
+                        ["AC-03"],
+                        "Stale Access",
+                        lambda: check_stale_agentcore_access(permission_cache),
+                    ),
+                    # AC-09 inspects a global IAM service-linked role, so it is also
+                    # run once on the primary region rather than per scanned region.
+                    (
+                        ["AC-09"],
+                        "Service-Linked Role",
+                        check_agentcore_service_linked_role,
+                    ),
+                ]
+            for check_ids, check_name, check_func in global_checks:
                 try:
                     logger.info(f"Running global check: {check_name}")
                     global_findings = check_func()
@@ -3825,16 +3905,12 @@ def lambda_handler(event, context):
                     all_findings.extend(global_findings)
                 except Exception as e:
                     logger.error(f"Error in global check '{check_name}': {e}")
-                    all_findings.append(
-                        create_finding(
-                            check_id="AC-00",
-                            finding_name=f"AgentCore {check_name} Check Error",
-                            finding_details=f"Error during {check_name} check: {str(e)}",
-                            resolution="Investigate error and retry assessment",
-                            reference=AGENTCORE_STARTER_TOOLKIT_URL,
-                            severity=SeverityEnum.HIGH,
-                            status=StatusEnum.FAILED,
-                            region=GLOBAL_REGION_LABEL,
+                    all_findings.extend(
+                        _incomplete_check_findings(
+                            check_ids,
+                            f"AgentCore {check_name} Check",
+                            e,
+                            GLOBAL_REGION_LABEL,
                         )
                     )
 
@@ -3989,36 +4065,56 @@ def lambda_handler(event, context):
         # global service-linked role check AC-09 are run separately, once, on the
         # primary region above)
         checks = [
-            ("VPC Configuration", check_agentcore_vpc_configuration),
-            ("Observability", check_agentcore_observability),
-            ("Encryption", check_agentcore_encryption),
+            (["AC-01"], "VPC Configuration", check_agentcore_vpc_configuration),
+            (["AC-04"], "Observability", check_agentcore_observability),
+            (["AC-05"], "Encryption", check_agentcore_encryption),
             (
+                ["AC-06"],
                 "Browser Tool Recording",
                 lambda: check_browser_tool_recording(browser_inventory),
             ),
-            ("Memory Configuration", check_agentcore_memory_configuration),
-            ("Gateway Configuration", check_agentcore_gateway_configuration),
-            ("VPC Endpoints", check_agentcore_vpc_endpoints),
-            ("Resource-Based Policies", check_agentcore_resource_based_policies),
-            ("Policy Engine Encryption", check_agentcore_policy_engine_encryption),
-            ("Gateway Encryption", check_agentcore_gateway_encryption),
-            ("Identity Token Vault Encryption", check_agentcore_token_vault_encryption),
+            (["AC-07"], "Memory Configuration", check_agentcore_memory_configuration),
+            (["AC-13"], "Gateway Configuration", check_agentcore_gateway_configuration),
+            (["AC-08"], "VPC Endpoints", check_agentcore_vpc_endpoints),
             (
+                ["AC-10"],
+                "Resource-Based Policies",
+                check_agentcore_resource_based_policies,
+            ),
+            (
+                ["AC-11"],
+                "Policy Engine Encryption",
+                check_agentcore_policy_engine_encryption,
+            ),
+            (["AC-12"], "Gateway Encryption", check_agentcore_gateway_encryption),
+            (
+                ["AC-14"],
+                "Identity Token Vault Encryption",
+                check_agentcore_token_vault_encryption,
+            ),
+            (
+                ["AC-15"],
                 "Code Interpreter Isolation",
                 check_agentcore_code_interpreter_isolation,
             ),
             (
+                ["AC-16"],
                 "Custom Browser Isolation",
                 lambda: check_agentcore_browser_network_isolation(browser_inventory),
             ),
             (
+                ["AC-17"],
                 "Online Evaluation Coverage",
                 check_agentcore_online_evaluation_coverage,
             ),
-            ("Agentic Gateway Security", check_agentcore_gateway_agentic_security),
+            (
+                ["AG-24", "AG-25", "AG-26", "AG-27"],
+                "Agentic Gateway Security",
+                check_agentcore_gateway_agentic_security,
+            ),
         ]
 
-        for check_name, check_func in checks:
+        for check_ids, check_name, check_func in checks:
             if not check_timeout():
                 logger.error(
                     f"Timeout approaching, skipping remaining checks after {check_name}"
@@ -4040,16 +4136,12 @@ def lambda_handler(event, context):
 
             except Exception as e:
                 logger.error(f"Error in check '{check_name}': {e}")
-                all_findings.append(
-                    create_finding(
-                        check_id="AC-00",
-                        finding_name=f"AgentCore {check_name} Check Error",
-                        finding_details=f"Error during {check_name} check: {str(e)}",
-                        resolution="Investigate error and retry assessment",
-                        reference=AGENTCORE_STARTER_TOOLKIT_URL,
-                        severity=SeverityEnum.HIGH,
-                        status=StatusEnum.FAILED,
-                        region=region,
+                all_findings.extend(
+                    _incomplete_check_findings(
+                        check_ids,
+                        f"AgentCore {check_name} Check",
+                        e,
+                        region,
                     )
                 )
 

@@ -3,6 +3,7 @@ import copy
 import os
 import sys
 import importlib.util
+from unittest import mock
 
 
 _THIS_DIR = os.path.dirname(__file__)
@@ -801,6 +802,187 @@ class TestHtmlReportGeneration(unittest.TestCase):
     def tearDown(self):
         """Clean up test files after running tests"""
         pass
+
+
+class TestReportFailureHandling(unittest.TestCase):
+    def setUp(self):
+        self.event = {
+            "Execution": {"Name": "synthetic-execution-id"},
+            "OriginalInput": {
+                "enableResponsibleAIGRC": "false",
+                "enableOWASP": "false",
+                "ResolvedRegions": {"regions": ["us-east-1"]},
+            },
+        }
+        self.assessment_results = {
+            "account_id": "123456789012",
+            "timestamp": "2026-09-11 10:00:00 UTC",
+            "bedrock": {
+                "bedrock_security_report_synthetic-execution-id_us-east-1": [
+                    {"Check_ID": "BR-00"}
+                ]
+            },
+            "sagemaker": {
+                "sagemaker_security_report_synthetic-execution-id_us-east-1": [
+                    {"Check_ID": "SM-00"}
+                ]
+            },
+            "agentcore": {
+                "agentcore_security_report_synthetic-execution-id_us-east-1": [
+                    {"Check_ID": "AC-00"}
+                ]
+            },
+            "agent-registry": {
+                "agent_registry_security_report_synthetic-execution-id_us-east-1": [
+                    {"Check_ID": "AR-00"}
+                ]
+            },
+        }
+
+    def test_validation_rejects_a_missing_regional_artifact(self):
+        self.event["OriginalInput"]["ResolvedRegions"]["regions"].append("us-west-2")
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "sagemaker_security_report_synthetic-execution-id_us-west-2.csv",
+        ):
+            generate_report_app.validate_assessment_artifacts(
+                self.assessment_results,
+                "synthetic-execution-id",
+                self.event["OriginalInput"],
+            )
+
+    def test_validation_requires_responsible_ai_grc_as_owasp_dependency(self):
+        self.event["OriginalInput"]["enableOWASP"] = "true"
+        self.assessment_results["owasp"] = {
+            "owasp_security_report_synthetic-execution-id_us-east-1": [
+                {"Check_ID": "OW-01"}
+            ]
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "responsible_ai_grc_security_report_synthetic-execution-id.csv",
+        ):
+            generate_report_app.validate_assessment_artifacts(
+                self.assessment_results,
+                "synthetic-execution-id",
+                self.event["OriginalInput"],
+            )
+
+    def test_generate_html_report_propagates_template_failure(self):
+        with mock.patch.object(
+            generate_report_app,
+            "generate_report_from_template",
+            side_effect=RuntimeError("template rendering failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "template rendering failed"):
+                generate_report_app.generate_html_report(self.assessment_results)
+
+    def test_handler_render_failure_uploads_nothing_and_cleans_cache(self):
+        sts_client = mock.Mock()
+        sts_client.get_caller_identity.return_value = {"Account": "123456789012"}
+        s3_client = mock.Mock()
+        s3_client.delete_object.side_effect = RuntimeError("cleanup failed")
+
+        def boto_client(service_name, **_kwargs):
+            return {"sts": sts_client, "s3": s3_client}[service_name]
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"AIML_ASSESSMENT_BUCKET_NAME": "test-assessment-bucket"},
+            ),
+            mock.patch.object(
+                generate_report_app.boto3,
+                "client",
+                side_effect=boto_client,
+            ),
+            mock.patch.object(
+                generate_report_app,
+                "get_assessment_results",
+                return_value=self.assessment_results,
+            ),
+            mock.patch.object(
+                generate_report_app,
+                "generate_html_report",
+                side_effect=RuntimeError("template rendering failed"),
+            ),
+            mock.patch.object(generate_report_app, "write_html_to_s3") as write_report,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "template rendering failed"):
+                generate_report_app.lambda_handler(self.event, None)
+
+        write_report.assert_not_called()
+        s3_client.delete_object.assert_called_once_with(
+            Bucket="test-assessment-bucket",
+            Key="permissions_cache_synthetic-execution-id.json",
+        )
+
+    def test_write_html_to_s3_propagates_upload_failure(self):
+        s3_client = mock.Mock()
+        s3_client.put_object.side_effect = RuntimeError("upload failed")
+
+        with mock.patch.object(
+            generate_report_app.boto3,
+            "client",
+            return_value=s3_client,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "upload failed"):
+                generate_report_app.write_html_to_s3(
+                    "<html></html>",
+                    "test-assessment-bucket",
+                    "synthetic-execution-id",
+                )
+
+    def test_handler_success_still_returns_report_location(self):
+        sts_client = mock.Mock()
+        sts_client.get_caller_identity.return_value = {"Account": "123456789012"}
+        s3_client = mock.Mock()
+
+        def boto_client(service_name, **_kwargs):
+            return {"sts": sts_client, "s3": s3_client}[service_name]
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"AIML_ASSESSMENT_BUCKET_NAME": "test-assessment-bucket"},
+            ),
+            mock.patch.object(
+                generate_report_app.boto3,
+                "client",
+                side_effect=boto_client,
+            ),
+            mock.patch.object(
+                generate_report_app,
+                "get_assessment_results",
+                return_value=self.assessment_results,
+            ),
+            mock.patch.object(
+                generate_report_app,
+                "generate_html_report",
+                return_value="<html></html>",
+            ),
+            mock.patch.object(
+                generate_report_app,
+                "write_html_to_s3",
+                return_value="security_assessment_single_account_20260911_100000.html",
+            ),
+        ):
+            response = generate_report_app.lambda_handler(self.event, None)
+
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(
+            response["body"]["report_location"],
+            (
+                "s3://test-assessment-bucket/"
+                "security_assessment_single_account_20260911_100000.html"
+            ),
+        )
+        s3_client.delete_object.assert_called_once_with(
+            Bucket="test-assessment-bucket",
+            Key="permissions_cache_synthetic-execution-id.json",
+        )
 
 
 if __name__ == "__main__":

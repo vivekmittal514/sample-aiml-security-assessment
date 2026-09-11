@@ -365,12 +365,24 @@ class TestGetPermissionsCache:
     def test_returns_parsed_json(self, mock_client):
         s3 = MagicMock()
         body = MagicMock()
-        body.read.return_value = json.dumps({"role_permissions": {"r1": {}}}).encode()
+        body.read.return_value = json.dumps(
+            {"role_permissions": {"r1": {}}, "user_permissions": {}}
+        ).encode()
         s3.get_object.return_value = {"Body": body}
         mock_client.return_value = s3
 
         result = app.get_permissions_cache("exec-123")
-        assert result == {"role_permissions": {"r1": {}}}
+        assert result == {"role_permissions": {"r1": {}}, "user_permissions": {}}
+
+    @patch("finserv_app.boto3.client")
+    def test_returns_none_on_invalid_schema(self, mock_client):
+        s3 = MagicMock()
+        body = MagicMock()
+        body.read.return_value = json.dumps({"role_permissions": {}}).encode()
+        s3.get_object.return_value = {"Body": body}
+        mock_client.return_value = s3
+
+        assert app.get_permissions_cache("exec-123") is None
 
     @patch("finserv_app.boto3.client")
     def test_returns_none_on_client_error(self, mock_client):

@@ -352,7 +352,12 @@ def check_agent_registry_stale_access(
                 f"{finding} Incomplete",
                 f"Assessment could not determine the account ID needed to query IAM service-last-accessed data: {_error_detail(error)}.",
                 IAM_LAST_ACCESSED_REFERENCE_URL,
-                _error_resolution(error, "sts:GetCallerIdentity"),
+                (
+                    "Verify that the assessment credentials are present and valid, "
+                    "the regional STS endpoint is reachable, and GetCallerIdentity "
+                    "returns an Account value. This operation does not require an IAM "
+                    "Allow permission."
+                ),
             )
         ]
 

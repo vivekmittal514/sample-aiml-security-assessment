@@ -7788,7 +7788,7 @@ https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-polic
                     <summary>Details and remediation</summary>
                     <div class="finding-more-body">
                         <div><strong>Details</strong><p>OWASP category: LLM03:2025 Supply Chain. Source check FS-12: No Service Control Policies reference Bedrock. Without SCPs, any account in the organization can access any Bedrock model, including unapproved third-party models.</p></div>
-                        <div><strong>Resolution</strong><p>Attach an Organizations SCP that denies bedrock:InvokeModel* except for allowlisted bedrock:ModelId values.</p></div>
+                        <div><strong>Resolution</strong><p>Attach an Organizations SCP that denies Bedrock inference outside allowlisted model and inference-profile ARNs using Resource or NotResource scoping.</p></div>
                         <div><strong>Reference</strong><p><a href="https://genai.owasp.org/llmrisk/llm032025-supply-chain/" target="_blank" rel="noopener noreferrer" class="reference-btn" title="View AWS Documentation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></p></div>
                     </div>
                 </details>
@@ -9433,8 +9433,8 @@ Confirm this age is acceptable for each data source's currency requirement — s
                     <summary>Details and remediation</summary>
                     <div class="finding-more-body">
                         <div><strong>Details</strong><p>No Service Control Policies reference Bedrock. Without SCPs, any account in the organization can access any Bedrock model, including unapproved third-party models.</p></div>
-                        <div><strong>Resolution</strong><p>1. Create an SCP that denies bedrock:InvokeModel for model IDs not on the approved list.
-2. Use bedrock:ModelId condition key to allowlist approved models.
+                        <div><strong>Resolution</strong><p>1. Create an SCP that denies bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream, and bedrock:CreateModelInvocationJob outside approved model access.
+2. Use Resource or NotResource with approved foundation-model, custom-model, provisioned-model, and inference-profile ARNs to express the allowlist.
 3. Maintain a model inventory and update the SCP when models are approved/retired.</p></div>
                         <div><strong>Reference</strong><p><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html" target="_blank" rel="noopener noreferrer" class="reference-btn" title="View AWS Documentation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></p></div>
                     </div>
@@ -11842,7 +11842,7 @@ A JWT authorizer is a prerequisite, not proof of propagation; verify downstream 
                     <summary>Details and remediation</summary>
                     <div class="finding-more-body">
                         <div><strong>Details</strong><p>Service-linked role 'AWSServiceRoleForBedrockAgentCoreNetwork' does not exist. VPC configuration for AgentCore Runtimes will fail without this role.</p></div>
-                        <div><strong>Resolution</strong><p>The service-linked role is automatically created when you configure VPC for an AgentCore Runtime. Ensure IAM permissions allow service-linked role creation.</p></div>
+                        <div><strong>Resolution</strong><p>Allow iam:CreateServiceLinkedRole for arn:PARTITION:iam::*:role/aws-service-role/network.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreNetwork, replacing PARTITION with the deployment partition, and add StringEquals for iam:AWSServiceName = network.bedrock-agentcore.amazonaws.com. Then configure VPC networking on an AgentCore Runtime so AWS creates the service-linked role.</p></div>
                         <div><strong>Reference</strong><p><a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-vpc.html" target="_blank" rel="noopener noreferrer" class="reference-btn" title="View AWS Documentation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></p></div>
                     </div>
                 </details>
@@ -15002,7 +15002,7 @@ This enables private connectivity via AWS PrivateLink</p></div>
                     <summary>Details and remediation</summary>
                     <div class="finding-more-body">
                         <div><strong>Details</strong><p>Service-linked role 'AWSServiceRoleForBedrockAgentCoreNetwork' does not exist. VPC configuration for AgentCore Runtimes will fail without this role.</p></div>
-                        <div><strong>Resolution</strong><p>The service-linked role is automatically created when you configure VPC for an AgentCore Runtime. Ensure IAM permissions allow service-linked role creation.</p></div>
+                        <div><strong>Resolution</strong><p>Allow iam:CreateServiceLinkedRole for arn:PARTITION:iam::*:role/aws-service-role/network.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreNetwork, replacing PARTITION with the deployment partition, and add StringEquals for iam:AWSServiceName = network.bedrock-agentcore.amazonaws.com. Then configure VPC networking on an AgentCore Runtime so AWS creates the service-linked role.</p></div>
                         <div><strong>Reference</strong><p><a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-vpc.html" target="_blank" rel="noopener noreferrer" class="reference-btn" title="View AWS Documentation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></p></div>
                     </div>
                 </details>
@@ -19632,7 +19632,7 @@ This enables private connectivity via AWS PrivateLink</p></div>
                     <summary>Details and remediation</summary>
                     <div class="finding-more-body">
                         <div><strong>Details</strong><p>OWASP category: LLM03:2025 Supply Chain. Source check FS-12: Account is not part of an AWS Organization or lacks SCP read access.</p></div>
-                        <div><strong>Resolution</strong><p>Attach an Organizations SCP that denies bedrock:InvokeModel* except for allowlisted bedrock:ModelId values.</p></div>
+                        <div><strong>Resolution</strong><p>Attach an Organizations SCP that denies Bedrock inference outside allowlisted model and inference-profile ARNs using Resource or NotResource scoping.</p></div>
                         <div><strong>Reference</strong><p><a href="https://genai.owasp.org/llmrisk/llm032025-supply-chain/" target="_blank" rel="noopener noreferrer" class="reference-btn" title="View AWS Documentation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></p></div>
                     </div>
                 </details>
@@ -29951,7 +29951,7 @@ https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-polic
                     <summary>Details and remediation</summary>
                     <div class="finding-more-body">
                         <div><strong>Details</strong><p>OWASP category: LLM03:2025 Supply Chain. Source check FS-12: No Service Control Policies reference Bedrock. Without SCPs, any account in the organization can access any Bedrock model, including unapproved third-party models.</p></div>
-                        <div><strong>Resolution</strong><p>Attach an Organizations SCP that denies bedrock:InvokeModel* except for allowlisted bedrock:ModelId values.</p></div>
+                        <div><strong>Resolution</strong><p>Attach an Organizations SCP that denies Bedrock inference outside allowlisted model and inference-profile ARNs using Resource or NotResource scoping.</p></div>
                         <div><strong>Reference</strong><p><a href="https://genai.owasp.org/llmrisk/llm032025-supply-chain/" target="_blank" rel="noopener noreferrer" class="reference-btn" title="View AWS Documentation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></p></div>
                     </div>
                 </details>
@@ -30631,7 +30631,7 @@ Confirm this age is acceptable for each data source's currency requirement — s
                     <summary>Details and remediation</summary>
                     <div class="finding-more-body">
                         <div><strong>Details</strong><p>Service-linked role 'AWSServiceRoleForBedrockAgentCoreNetwork' does not exist. VPC configuration for AgentCore Runtimes will fail without this role.</p></div>
-                        <div><strong>Resolution</strong><p>The service-linked role is automatically created when you configure VPC for an AgentCore Runtime. Ensure IAM permissions allow service-linked role creation.</p></div>
+                        <div><strong>Resolution</strong><p>Allow iam:CreateServiceLinkedRole for arn:PARTITION:iam::*:role/aws-service-role/network.bedrock-agentcore.amazonaws.com/AWSServiceRoleForBedrockAgentCoreNetwork, replacing PARTITION with the deployment partition, and add StringEquals for iam:AWSServiceName = network.bedrock-agentcore.amazonaws.com. Then configure VPC networking on an AgentCore Runtime so AWS creates the service-linked role.</p></div>
                         <div><strong>Reference</strong><p><a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/agentcore-vpc.html" target="_blank" rel="noopener noreferrer" class="reference-btn" title="View AWS Documentation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></p></div>
                     </div>
                 </details>
@@ -32867,8 +32867,8 @@ Confirm this age is acceptable for each data source's currency requirement — s
                     <summary>Details and remediation</summary>
                     <div class="finding-more-body">
                         <div><strong>Details</strong><p>No Service Control Policies reference Bedrock. Without SCPs, any account in the organization can access any Bedrock model, including unapproved third-party models.</p></div>
-                        <div><strong>Resolution</strong><p>1. Create an SCP that denies bedrock:InvokeModel for model IDs not on the approved list.
-2. Use bedrock:ModelId condition key to allowlist approved models.
+                        <div><strong>Resolution</strong><p>1. Create an SCP that denies bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream, and bedrock:CreateModelInvocationJob outside approved model access.
+2. Use Resource or NotResource with approved foundation-model, custom-model, provisioned-model, and inference-profile ARNs to express the allowlist.
 3. Maintain a model inventory and update the SCP when models are approved/retired.</p></div>
                         <div><strong>Reference</strong><p><a href="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html" target="_blank" rel="noopener noreferrer" class="reference-btn" title="View AWS Documentation"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a></p></div>
                     </div>

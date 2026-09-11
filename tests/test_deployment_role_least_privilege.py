@@ -8,6 +8,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _MEMBER_TEMPLATE = _REPO_ROOT / "deployment" / "1-aiml-security-member-roles.yaml"
 _SINGLE_TEMPLATE = _REPO_ROOT / "deployment" / "aiml-security-single-account.yaml"
 _MULTI_TEMPLATE = _REPO_ROOT / "deployment" / "2-aiml-security-codebuild.yaml"
+_BUILDSPEC = _REPO_ROOT / "buildspec.yml"
 
 
 def _text(path: Path) -> str:
@@ -23,6 +24,15 @@ def _role_policies(path: Path, role_header: str) -> str:
 
 def _contains_action(policy: str, action: str) -> bool:
     return bool(re.search(rf"-\s+{re.escape(action)}(?:\s|#|$)", policy))
+
+
+def _statement_by_sid(text: str, sid: str) -> str:
+    match = re.search(
+        rf"(?ms)^[ ]*-[ ]+Sid:[ ]+{re.escape(sid)}\n(.*?)(?=^[ ]*-[ ]+Sid:|\Z)",
+        text,
+    )
+    assert match, f"Missing policy statement {sid}"
+    return match.group(0)
 
 
 def test_cross_account_member_role_does_not_receive_assessment_api_permissions():
@@ -158,6 +168,81 @@ def test_member_role_scopes_create_operations_and_has_no_wildcard_resource():
     assert "s3:CreateBucket" in text
     assert "s3:::aiml-security-*" in text
     assert "iam:UpdateAssumeRolePolicy" in text
+
+
+def test_failed_deployment_stacks_can_be_recovered_on_every_deploy_path():
+    """SAM cannot update ROLLBACK_COMPLETE stacks, so retry paths must delete them."""
+    buildspec = _text(_BUILDSPEC)
+    deploy_block = buildspec.split(
+        'echo "Build completed, checking build directory:"', maxsplit=1
+    )[1]
+    assert "recover_failed_stack()" in buildspec
+    assert deploy_block.index("recover_failed_stack()") < deploy_block.index(
+        "if [[ $MULTI_ACCOUNT_SCAN = 'true' ]]; then"
+    )
+    assert '"$stack_status" == "ROLLBACK_COMPLETE"' in buildspec
+    assert '"$stack_status" == "DELETE_FAILED"' in buildspec
+    assert "aws cloudformation delete-stack --stack-name" in buildspec
+    assert "aws cloudformation wait stack-delete-complete --stack-name" in buildspec
+
+    # Multi-account member, multi-account management, and single-account paths.
+    assert 'recover_failed_stack "aiml-security-$accountId"' in buildspec
+    assert "recover_failed_stack aiml-security-mgmt" in buildspec
+    assert 'recover_failed_stack "$STACK_NAME"' in buildspec
+
+    for template in (_MEMBER_TEMPLATE, _SINGLE_TEMPLATE, _MULTI_TEMPLATE):
+        deletion = _statement_by_sid(_text(template), "DeleteFailedDeploymentStacks")
+        assert _contains_action(deletion, "cloudformation:DeleteStack")
+        assert "stack/aiml-security-*/*" in deletion
+        assert "stack/aiml-sec-*/*" in deletion
+        assert "stack/aws-sam-cli-managed-default/*" in deletion
+        assert not re.search(r"Resource:\s+['\"]?\*['\"]?", deletion)
+
+
+def test_multi_account_build_fails_when_any_account_has_incomplete_coverage():
+    """Every expected account must complete and produce the current run's artifacts."""
+    buildspec = _text(_BUILDSPEC)
+
+    assert "EXPECTED_ACCOUNTS_FILE=/tmp/expected_accounts.txt" in buildspec
+    assert "ASSESSMENT_FAILURES_FILE=/tmp/assessment_failures.tsv" in buildspec
+    assert ': > "$ASSESSMENT_FAILURES_FILE"' in buildspec
+    assert 'grep -Fxq "$AWS_ACCOUNT_ID" "$EXPECTED_ACCOUNTS_FILE"' in buildspec
+    assert (
+        'printf \'%s\\n\' "$AWS_ACCOUNT_ID" >> "$EXPECTED_ACCOUNTS_FILE"' in buildspec
+    )
+    assert 'touch "$ASSESSMENT_FAILURES_FILE"' in buildspec
+    assert "record_failure()" in buildspec
+
+    for stage in (
+        "deployment",
+        "execution-start",
+        "execution",
+        "result-collection",
+        "artifact-copy",
+        "artifact-validation",
+        "artifact-upload",
+        "consolidation",
+    ):
+        assert f'"{stage}"' in buildspec
+
+    assert "execution_succeeded=false" in buildspec
+    assert "execution_succeeded=true" in buildspec
+    assert '"Timed out waiting for Step Functions completion"' in buildspec
+    assert '"No execution ARN was saved during deployment"' in buildspec
+    assert (
+        "required_artifact_prefixes=(bedrock sagemaker agentcore agent_registry)"
+        in buildspec
+    )
+    assert "required_artifact_prefixes+=(responsible_ai_grc)" in buildspec
+    assert "required_artifact_prefixes+=(owasp)" in buildspec
+    assert (
+        "Skipping the consolidated report because one or more accounts have "
+        "incomplete coverage."
+    ) in buildspec
+    assert 'done < "$ASSESSMENT_FAILURES_FILE"' in buildspec
+
+    # A transient shell array must not be the source of truth across phases.
+    assert "failed_accounts=()" not in buildspec
 
 
 def test_codebuild_log_permissions_are_project_scoped():

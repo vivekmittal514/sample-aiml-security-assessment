@@ -73,6 +73,14 @@ Resources:
             Action:
               - cloudformation:CreateChangeSet
             Resource: !Sub "arn:${AWS::Partition}:cloudformation:*:aws:transform/Serverless-2016-10-31"
+          - Sid: DeleteFailedDeploymentStacks
+            Effect: Allow
+            Action:
+              - cloudformation:DeleteStack
+            Resource:
+              - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aiml-security-*/*"
+              - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aiml-sec-*/*"
+              - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*"
           - Sid: AssessmentLambdaFunctions
             Effect: Allow
             Action:

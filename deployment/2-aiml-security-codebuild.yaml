@@ -147,7 +147,8 @@ Parameters:
     Description: >
       Comma- or space-separated list of AWS regions to scan (e.g.,
       us-east-1,us-west-2,eu-west-1 or us-east-1 us-west-2 eu-west-1).
-      Use 'all' to scan all regions where the service is available.
+      Use 'all' to scan assessed-service regions in the standard AWS
+      commercial partition. GovCloud and China are not currently supported.
       Leave empty to scan only the deployment region.
     Default: ""
 
@@ -390,11 +391,14 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*"
                   - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:changeSet/samcli-deploy*/*"
                   - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:changeSet/InitialCreation/*"
-              - Sid: DeleteFailedSamManagedStack
+              - Sid: DeleteFailedDeploymentStacks
                 Action:
                   - cloudformation:DeleteStack
                 Effect: Allow
-                Resource: !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aiml-security-*/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aiml-sec-*/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*"
               - Sid: CloudFormationServerlessTransform
                 Action:
                   - cloudformation:CreateChangeSet

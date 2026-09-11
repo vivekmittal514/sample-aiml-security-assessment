@@ -67,6 +67,13 @@ additional compatibility syntax.
 
 The AI/ML Security Assessment Framework is a serverless, multi-account security assessment solution for AWS AI/ML workloads. It performs 94 core security checks across Amazon Bedrock, Amazon SageMaker AI, Amazon Bedrock AgentCore, and AWS Agent Registry, plus 38 always-on Agentic AI Security checks, with optional 64-check Responsible AI GRC and 12-check OWASP Top 10 for LLM assessments, generating interactive HTML reports with findings and remediation guidance.
 
+The current deployment is validated only in the standard AWS commercial
+partition (`aws`). Partition-aware implementation details must not be treated
+as support for AWS GovCloud (US) (`aws-us-gov`) or AWS China (`aws-cn`).
+Adding either partition requires service-availability review, partition-safe
+Step Functions integrations and generated URLs, and end-to-end validation of
+both single-account and multi-account deployment modes.
+
 ### Security Design Principles
 
 - Runtime assessment Lambda roles are read-oriented and scoped to the APIs needed by each assessment

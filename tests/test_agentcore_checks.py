@@ -66,11 +66,37 @@ def test_caller_identity_partition_handles_incomplete_arns(
     )
 
 
+def test_missing_permissions_cache_raises_instead_of_returning_empty_inventory():
+    error = _make_client_error("NoSuchKey", "Cache not found")
+    with patch.object(agentcore_app, "s3_client") as mock_s3:
+        mock_s3.get_object.side_effect = error
+        with pytest.raises(ClientError):
+            agentcore_app.get_permissions_cache("execution-123")
+
+
 # ---------------------------------------------------------------------------
 # Helper: patch AgentCore module-level clients
 # ---------------------------------------------------------------------------
 def _make_client_error(code="ResourceNotFoundException", message="Not found"):
     return ClientError({"Error": {"Code": code, "Message": message}}, "operation")
+
+
+def test_incomplete_check_findings_preserve_control_ids_without_scored_failures():
+    findings = agentcore_app._incomplete_check_findings(
+        ["AC-01", "AG-24"],
+        "AgentCore Test Check",
+        RuntimeError("sensitive implementation detail"),
+        "us-east-1",
+    )
+
+    assert [finding["Check_ID"] for finding in findings] == ["AC-01", "AG-24"]
+    assert {finding["Status"] for finding in findings} == {"N/A"}
+    assert {finding["Severity"] for finding in findings} == {"Informational"}
+    assert all(finding["Check_ID"] != "AC-00" for finding in findings)
+    assert all(
+        "sensitive implementation detail" not in finding["Finding_Details"]
+        for finding in findings
+    )
 
 
 # ===================================================================
@@ -135,12 +161,13 @@ class TestAC01VPCConfiguration:
         assert findings[0]["Status"] == "Passed"
 
     @patch("agentcore_app.agentcore_client")
-    def test_ac01_exception_returns_error_finding(self, mock_ac):
+    def test_ac01_exception_returns_incomplete_na(self, mock_ac):
         mock_ac.list_agent_runtimes.side_effect = Exception("VPC error")
         result = agentcore_app.check_agentcore_vpc_configuration()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.agentcore_client", None)
     def test_ac01_schema_valid(self):
@@ -466,6 +493,24 @@ class TestAC02FullAccessRoles:
         result = agentcore_app.check_agentcore_full_access_roles(empty_permission_cache)
         findings = extract_csv_data(result)
         assert len(findings) >= 1
+
+    def test_ac02_malformed_policy_document_returns_incomplete_na(self):
+        permission_cache = {
+            "role_permissions": {
+                "MalformedRole": {
+                    "attached_policies": [{"document": "{not-json"}],
+                    "inline_policies": [],
+                }
+            },
+            "user_permissions": {},
+        }
+
+        findings = agentcore_app.check_agentcore_full_access_roles(permission_cache)
+
+        assert len(findings) == 1
+        assert findings[0]["Check_ID"] == "AC-02"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.agentcore_client")
     def test_ac02_schema_valid(self, mock_ac, empty_permission_cache):
@@ -1068,6 +1113,37 @@ class TestAC03StaleAccess:
 
         assert findings[0]["Status"] == "Passed"
 
+    @patch("agentcore_app.boto3.client")
+    @patch("agentcore_app.iam_client")
+    def test_ac03_access_denied_returns_incomplete_na(self, mock_iam, mock_boto_client):
+        mock_boto_client.return_value.get_caller_identity.return_value = {
+            "Account": "123456789012"
+        }
+        mock_iam.generate_service_last_accessed_details.side_effect = (
+            _make_client_error("AccessDenied", "Denied")
+        )
+        permission_cache = {
+            "role_permissions": {
+                "RuntimeReader": {
+                    "attached_policies": [
+                        _agent_platform_policy(
+                            "AgentCoreReadOnly",
+                            "bedrock-agentcore:ListAgentRuntimes",
+                        )
+                    ],
+                    "inline_policies": [],
+                }
+            },
+            "user_permissions": {},
+        }
+
+        findings = agentcore_app.check_stale_agentcore_access(permission_cache)
+
+        assert len(findings) == 1
+        assert findings[0]["Check_ID"] == "AC-03"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
+
 
 # ===================================================================
 # AC-04: check_agentcore_observability
@@ -1092,12 +1168,13 @@ class TestAC04Observability:
         assert len(findings) >= 1
 
     @patch("agentcore_app.agentcore_client")
-    def test_ac04_exception_returns_error_finding(self, mock_ac):
+    def test_ac04_exception_returns_incomplete_na(self, mock_ac):
         mock_ac.list_agent_runtimes.side_effect = Exception("Observability error")
         result = agentcore_app.check_agentcore_observability()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.agentcore_client", None)
     def test_ac04_schema_valid(self):
@@ -1131,13 +1208,14 @@ class TestAC05Encryption:
 
     @patch("agentcore_app.ecr_client")
     @patch("agentcore_app.agentcore_client")
-    def test_ac05_exception_returns_error_finding(self, mock_ac, mock_ecr):
+    def test_ac05_exception_returns_incomplete_na(self, mock_ac, mock_ecr):
         # Raise on the ECR call which is the first thing the check does
         mock_ecr.describe_repositories.side_effect = Exception("Encryption error")
         result = agentcore_app.check_agentcore_encryption()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.ecr_client")
     @patch("agentcore_app.agentcore_client", None)
@@ -1283,12 +1361,13 @@ class TestAC07MemoryConfiguration:
         assert findings[0]["Status"] == "Passed"
 
     @patch("agentcore_app.agentcore_client")
-    def test_ac07_exception_returns_error_finding(self, mock_ac):
+    def test_ac07_exception_returns_incomplete_na(self, mock_ac):
         mock_ac.list_memories.side_effect = Exception("Memory error")
         result = agentcore_app.check_agentcore_memory_configuration()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.agentcore_client", None)
     def test_ac07_schema_valid(self):
@@ -1363,7 +1442,7 @@ class TestAC08VPCEndpoints:
 
     @patch("agentcore_app.ec2_client")
     @patch("agentcore_app.agentcore_client")
-    def test_ac08_exception_returns_error_finding(self, mock_ac, mock_ec2):
+    def test_ac08_exception_returns_incomplete_na(self, mock_ac, mock_ec2):
         mock_ac.list_agent_runtimes.return_value = {
             "agentRuntimes": [
                 {
@@ -1376,7 +1455,8 @@ class TestAC08VPCEndpoints:
         result = agentcore_app.check_agentcore_vpc_endpoints()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.ec2_client")
     @patch("agentcore_app.agentcore_client", None)
@@ -1437,20 +1517,27 @@ class TestAC09ServiceLinkedRole:
         mock_iam.get_role.side_effect = _make_client_error(
             "NoSuchEntity", "Role not found"
         )
+        mock_iam.exceptions.NoSuchEntityException = ClientError
         result = agentcore_app.check_agentcore_service_linked_role()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
         assert findings[0]["Status"] == "Failed"
+        assert "iam:CreateServiceLinkedRole" in findings[0]["Resolution"]
+        assert (
+            "iam:AWSServiceName = network.bedrock-agentcore.amazonaws.com"
+            in findings[0]["Resolution"]
+        )
 
     @patch("agentcore_app.agentcore_client")
-    def test_ac09_exception_returns_error_finding(self, mock_ac):
+    def test_ac09_exception_returns_incomplete_na(self, mock_ac):
         # Patch iam_client to raise
         with patch("agentcore_app.iam_client") as mock_iam:
             mock_iam.get_role.side_effect = Exception("IAM error")
             result = agentcore_app.check_agentcore_service_linked_role()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.iam_client")
     @patch("agentcore_app.agentcore_client", None)
@@ -1586,12 +1673,13 @@ class TestAC10ResourceBasedPolicies:
         )
 
     @patch("agentcore_app.agentcore_client")
-    def test_ac10_exception_returns_error_finding(self, mock_ac):
+    def test_ac10_exception_returns_incomplete_na(self, mock_ac):
         mock_ac.list_agent_runtimes.side_effect = Exception("RBP error")
         result = agentcore_app.check_agentcore_resource_based_policies()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.agentcore_client", None)
     def test_ac10_schema_valid(self):
@@ -1621,12 +1709,37 @@ class TestAC11PolicyEngineEncryption:
         assert len(findings) >= 1
 
     @patch("agentcore_app.agentcore_client")
-    def test_ac11_exception_returns_error_finding(self, mock_ac):
+    def test_ac11_missing_cmk_lists_required_kms_permissions(self, mock_ac):
+        mock_ac.list_policy_engines.return_value = {
+            "policyEngines": [{"policyEngineId": "pe-1", "name": "PolicyEngine"}]
+        }
+        mock_ac.get_policy_engine.return_value = {
+            "policyEngineId": "pe-1",
+            "name": "PolicyEngine",
+        }
+
+        findings = extract_csv_data(
+            agentcore_app.check_agentcore_policy_engine_encryption()
+        )
+        failed = next(finding for finding in findings if finding["Status"] == "Failed")
+
+        for action in (
+            "kms:CreateGrant",
+            "kms:Decrypt",
+            "kms:GenerateDataKey",
+            "kms:DescribeKey",
+        ):
+            assert action in failed["Resolution"]
+        assert "kms:ViaService" in failed["Resolution"]
+
+    @patch("agentcore_app.agentcore_client")
+    def test_ac11_exception_returns_incomplete_na(self, mock_ac):
         mock_ac.list_policy_engines.side_effect = Exception("Policy engine error")
         result = agentcore_app.check_agentcore_policy_engine_encryption()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.agentcore_client", None)
     def test_ac11_schema_valid(self):
@@ -1672,12 +1785,13 @@ class TestAC12GatewayEncryption:
         mock_ac.get_gateway.assert_called_once_with(gatewayIdentifier="gw-1")
 
     @patch("agentcore_app.agentcore_client")
-    def test_ac12_exception_returns_error_finding(self, mock_ac):
+    def test_ac12_exception_returns_incomplete_na(self, mock_ac):
         mock_ac.list_gateways.side_effect = Exception("Gateway encryption error")
         result = agentcore_app.check_agentcore_gateway_encryption()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.agentcore_client", None)
     def test_ac12_schema_valid(self):
@@ -1717,12 +1831,13 @@ class TestAC13GatewayConfiguration:
         assert findings[0]["Status"] == "Passed"
 
     @patch("agentcore_app.agentcore_client")
-    def test_ac13_exception_returns_error_finding(self, mock_ac):
+    def test_ac13_exception_returns_incomplete_na(self, mock_ac):
         mock_ac.list_gateways.side_effect = Exception("Gateway config error")
         result = agentcore_app.check_agentcore_gateway_configuration()
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
 
     @patch("agentcore_app.agentcore_client", None)
     def test_ac13_schema_valid(self):
@@ -1871,12 +1986,33 @@ class TestAgenticGatewaySecurity:
 
         findings = agentcore_app.check_agentcore_gateway_agentic_security()
 
-        assert len(findings) == 1
-        assert findings[0]["Check_ID"] == "AG-24"
-        assert findings[0]["Status"] == "N/A"
-        assert findings[0]["Severity"] == "Informational"
-        assert "Unable to retrieve Gateway" in findings[0]["Finding_Details"]
-        assert_finding_schema(findings[0])
+        assert {finding["Check_ID"] for finding in findings} == {
+            "AG-24",
+            "AG-25",
+            "AG-26",
+            "AG-27",
+        }
+        assert all(finding["Status"] == "N/A" for finding in findings)
+        assert all(finding["Severity"] == "Informational" for finding in findings)
+        for finding in findings:
+            assert_finding_schema(finding)
+
+    @patch("agentcore_app.agentcore_client")
+    def test_gateway_list_sdk_error_returns_all_controls_incomplete(self, mock_ac):
+        mock_ac.list_gateways.side_effect = _make_client_error(
+            "ThrottlingException", "Throttled"
+        )
+
+        findings = agentcore_app.check_agentcore_gateway_agentic_security()
+
+        assert {finding["Check_ID"] for finding in findings} == {
+            "AG-24",
+            "AG-25",
+            "AG-26",
+            "AG-27",
+        }
+        assert all(finding["Status"] == "N/A" for finding in findings)
+        assert all(finding["Severity"] == "Informational" for finding in findings)
 
     @patch("agentcore_app.agentcore_client")
     def test_gateway_policy_controls_pass_when_enforced(self, mock_ac):

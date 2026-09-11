@@ -13,7 +13,12 @@ Run **[208 checks](docs/SECURITY_CHECKS.md)** across AWS accounts and regions:
 - **64 optional Responsible AI GRC checks** for selected technical controls informed by AWS governance, risk, and compliance guidance
 - **12 optional OWASP Top 10 for LLM checks**, including mapping-based coverage and native system-prompt-leakage checks
 
-Deploy in a single account or across AWS Organizations. Assessments support multi-region execution and produce interactive, shareable reports with severity ratings, filtering, search, remediation references, and per-account/per-region views. Assessment artifacts are stored in your AWS account; the deployment build pulls source from the configured repository.
+Deploy in a single account or across AWS Organizations. Assessments support
+multi-region execution within the standard AWS commercial partition and
+produce interactive, shareable reports with severity ratings, filtering,
+search, remediation references, and per-account/per-region views. Assessment
+artifacts are stored in your AWS account; the deployment build pulls source
+from the configured repository.
 
 > **Scope note:** Responsible AI GRC provides selected AWS configuration checks for AI governance, risk, and compliance. It complements architectural reviews such as the AWS Well-Architected Responsible AI Lens and broader compliance programs. See [Responsible AI GRC scope, sources, and compatibility](docs/RESPONSIBLE_AI_GRC_SCOPE.md).
 
@@ -28,11 +33,11 @@ The framework generates professional, interactive security assessment reports wi
 <table>
   <tr>
     <td width="50%">
-      <img src="sample-reports/dashboard-overview-light.png" alt="AWS AI/ML security assessment dashboard showing Amazon Bedrock, Amazon SageMaker AI, and Amazon Bedrock AgentCore findings by severity"/>
+      <img src="sample-reports/dashboard-overview-light.png" alt="AWS AI/ML security assessment dashboard showing Amazon Bedrock, Amazon SageMaker AI, Amazon Bedrock AgentCore, and AWS Agent Registry findings by severity"/>
       <p align="center"><em>Executive Dashboard (Light Mode)</em></p>
     </td>
     <td width="50%">
-      <img src="sample-reports/dashboard-overview-dark.png" alt="AWS AI/ML security assessment dashboard showing Amazon Bedrock, Amazon SageMaker AI, and Amazon Bedrock AgentCore findings by severity"/>
+      <img src="sample-reports/dashboard-overview-dark.png" alt="AWS AI/ML security assessment dashboard showing Amazon Bedrock, Amazon SageMaker AI, Amazon Bedrock AgentCore, and AWS Agent Registry findings by severity"/>
       <p align="center"><em>Executive Dashboard (Dark Mode)</em></p>
     </td>
   </tr>
@@ -49,7 +54,7 @@ The framework generates professional, interactive security assessment reports wi
 - **Executive Summary** with severity counts and service breakdown
 - **Priority Recommendations** highlighting critical issues requiring immediate attention
 - **[208 Security Checks](docs/SECURITY_CHECKS.md)** across Amazon Bedrock, Amazon SageMaker AI, Amazon Bedrock AgentCore, AWS Agent Registry, Agentic AI Security, Responsible AI GRC, and OWASP Top 10 for LLM
-- **Multi-Region Support** for core Bedrock, SageMaker, AgentCore, and AWS Agent Registry checks, with per-region risk breakdown
+- **Multi-Region Support** within the standard AWS commercial partition for core Bedrock, SageMaker, AgentCore, and AWS Agent Registry checks, with per-region risk breakdown
 - **Interactive Filtering** by account, region, service, severity, and status
 - **Light/Dark Mode Toggle** with persistent user preference
 - **Text Search** across all findings with real-time results
@@ -133,6 +138,12 @@ This tool operates within the [AWS Shared Responsibility Model](https://aws.amaz
 
 **208 checks across seven areas.** The assessment covers Amazon Bedrock, Amazon SageMaker AI, Amazon Bedrock AgentCore, AWS Agent Registry, always-on Agentic AI Security, optional Responsible AI GRC checks, and optional OWASP Top 10 for LLM checks. Other AI/ML services (Amazon Comprehend, Amazon Rekognition, Amazon Textract, and others) are not currently assessed.
 
+**AWS partition support.** The deployment and assessment are validated only in
+the standard AWS commercial partition (`aws`). AWS GovCloud (US)
+(`aws-us-gov`) and AWS China (`aws-cn`) are not currently validated or
+supported. Partition-aware ARN handling and region discovery in parts of the
+codebase do not constitute end-to-end support for those partitions.
+
 ---
 
 ## Quick Start
@@ -162,7 +173,7 @@ This tool operates within the [AWS Shared Responsibility Model](https://aws.amaz
 
    - Leave empty to scan only the deployment region (default)
    - Comma- or space-separated list (for example, `us-east-1,us-west-2,eu-west-1` or `us-east-1 us-west-2 eu-west-1`)
-   - `all` to scan all regions where the services are available
+   - `all` to scan assessed-service regions in the standard AWS commercial partition
 
 6. Review the optional [security policy baselines](#optional-security-policy-baselines), especially the Marketplace endpoint CMK requirement, which defaults to enabled.
 7. Acknowledge IAM capabilities and click **Submit**.
@@ -367,13 +378,17 @@ Both deployment modes support scanning multiple AWS regions in parallel via the 
 | --- | --- |
 | Empty (default) | Scans deployment region only — fully backward compatible |
 | Comma- or space-separated (for example, `us-east-1,us-west-2` or `us-east-1 us-west-2`) | Scans those regions in parallel |
-| `all` | Discovers and scans all regions where assessed services are available |
+| `all` | Discovers assessed-service regions in the standard AWS commercial partition. For newer services such as AgentCore and AWS Agent Registry that do not publish endpoint-region metadata, scans the commercial partition region catalog and reports unsupported regions as informational `N/A` |
 
 Scanning uses a Step Functions Map state and runs up to `MaxRegionConcurrency`
 regions concurrently. This reduces elapsed time compared with sequential
 scanning, although total duration and AWS API usage still depend on the number
 of regions and resources assessed. Services unavailable in a region produce an
 informational N/A finding.
+
+`TargetRegions` selects regions within the supported commercial partition; it
+does not enable cross-partition deployment or establish support for GovCloud
+or China regions.
 
 The HTML report includes a Region column, filter dropdown, and "Risk by Region / Scope" summary.
 
@@ -605,8 +620,8 @@ For the full methodology (matrix, factor definitions, disposition rules) and the
 
 The deployment uses multiple IAM roles with different trust and permission boundaries. They are not all read-only.
 
-- **`CodeBuildRole` / `MultiAccountCodeBuildRole`**: orchestration roles used by the infrastructure stack to clone the repo, build SAM, deploy/update the assessment stack, and start Step Functions executions. These roles require infrastructure-management permissions such as CloudFormation, Lambda, IAM, Step Functions, and S3 actions.
-- **`AIMLSecurityMemberRole`**: role assumed only in target accounts during multi-account runs. It is limited to deploying or updating the assessment stack, polling its Step Functions execution, and retrieving its report artifacts. It does **not** receive Bedrock, SageMaker, AgentCore, or other assessment-service read permissions.
+- **`CodeBuildRole` / `MultiAccountCodeBuildRole`**: orchestration roles used by the infrastructure stack to clone the repo, build SAM, deploy/update or recover failed assessment stacks, and start Step Functions executions. These roles require infrastructure-management permissions such as CloudFormation, Lambda, IAM, Step Functions, and S3 actions.
+- **`AIMLSecurityMemberRole`**: role assumed only in target accounts during multi-account runs. It is limited to deploying, updating, or recovering failed assessment stacks, polling Step Functions executions, and retrieving report artifacts. It does **not** receive Bedrock, SageMaker, AgentCore, or other assessment-service read permissions.
 - **SAM-created Lambda execution roles**: runtime roles for the assessment functions. These are the closest thing to read-only assessment roles. They primarily use `List*`, `Describe*`, and `Get*` access against Bedrock, SageMaker, AgentCore, AWS Agent Registry (`agent-registry:ListRegistries`, `agent-registry:GetRegistry`, `agent-registry:ListRegistryRecords`), IAM analysis APIs, and supporting read APIs, plus S3 access to write reports and read the cached IAM permissions file.
 
 If you need to reduce scope, review the role policies in:

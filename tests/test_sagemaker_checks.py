@@ -2490,7 +2490,7 @@ def _sagemaker_event(region="us-east-1", region_index=0):
 class TestSageMakerHandlerMultiRegion:
     """lambda_handler primary-region gating (SM-02) + availability probe (SM-00)."""
 
-    def _run_handler_unavailable(self, mock_client, event):
+    def _run_handler_unavailable(self, mock_client, event, cache_missing=False):
         """Drive the handler down the 'SageMaker unavailable' early-return path.
         The availability probe raises EndpointConnectionError so no regional
         checks run; only global IAM checks (if primary) plus SM-00 are emitted."""
@@ -2510,7 +2510,11 @@ class TestSageMakerHandlerMultiRegion:
             patch.object(
                 sagemaker_app,
                 "get_permissions_cache",
-                return_value={"role_permissions": {}, "user_permissions": {}},
+                return_value=(
+                    None
+                    if cache_missing
+                    else {"role_permissions": {}, "user_permissions": {}}
+                ),
             ),
             patch.object(sagemaker_app, "generate_csv_report", side_effect=fake_csv),
             patch.object(sagemaker_app, "write_to_s3", return_value="s3://b/r.csv"),
@@ -2536,6 +2540,22 @@ class TestSageMakerHandlerMultiRegion:
         # The availability finding is tagged with the scanned region.
         sm00 = [r for r in rows if r["Check_ID"] == "SM-00"]
         assert sm00 and sm00[0]["Region"] == "ap-south-2"
+
+    @patch("sagemaker_app.boto3.client")
+    def test_missing_cache_emits_incomplete_sm02_not_passed(self, mock_client):
+        resp, findings = self._run_handler_unavailable(
+            mock_client,
+            _sagemaker_event(region="ap-south-2", region_index=0),
+            cache_missing=True,
+        )
+        assert resp["statusCode"] == 200
+
+        rows = [row for finding in findings for row in finding.get("csv_data", [])]
+        sm02 = [row for row in rows if row["Check_ID"] == "SM-02"]
+        assert len(sm02) == 1
+        assert sm02[0]["Status"] == "N/A"
+        assert sm02[0]["Severity"] == "Informational"
+        assert "permissions cache" in sm02[0]["Finding_Details"]
 
     @patch("sagemaker_app.boto3.client")
     def test_non_primary_region_skips_global_iam_check(self, mock_client):

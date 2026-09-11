@@ -161,6 +161,23 @@ phases:
       - echo "Build completed, checking build directory:"
       - ls -la .aws-sam/build/
       - |
+        recover_failed_stack() {
+          local stack_name="$1"
+          local stack_status
+          stack_status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --query 'Stacks[0].StackStatus' --output text 2>/dev/null)
+          if [[ "$stack_status" == "ROLLBACK_COMPLETE" || "$stack_status" == "DELETE_FAILED" ]]; then
+            echo "Cleaning up failed deployment stack $stack_name (status: $stack_status)"
+            if ! aws cloudformation delete-stack --stack-name "$stack_name"; then
+              echo "ERROR: Failed to delete deployment stack $stack_name"
+              return 1
+            fi
+            if ! aws cloudformation wait stack-delete-complete --stack-name "$stack_name"; then
+              echo "ERROR: Timed out waiting for deployment stack $stack_name to delete"
+              return 1
+            fi
+          fi
+        }
+
         if [[ $MULTI_ACCOUNT_SCAN = 'true' ]]; then
           echo "Getting list of accounts to scan"
           if [[ $MULTI_ACCOUNT_LIST_OVERRIDE != '' ]]; then
@@ -181,11 +198,28 @@ phases:
 
           echo "Will scan accounts: $account_list"
 
-          # Track failed accounts
-          failed_accounts=()
-
-          # Create directory to store execution ARNs for post-build phase
+          # Persist failures and execution ARNs across CodeBuild phases.
+          ASSESSMENT_FAILURES_FILE=/tmp/assessment_failures.tsv
+          EXPECTED_ACCOUNTS_FILE=/tmp/expected_accounts.txt
+          : > "$ASSESSMENT_FAILURES_FILE"
+          : > "$EXPECTED_ACCOUNTS_FILE"
+          for accountId in $account_list; do
+            printf '%s\n' "$accountId" >> "$EXPECTED_ACCOUNTS_FILE"
+          done
+          # The management account is always assessed separately below, even
+          # when an override lists only member accounts. Persist it here so
+          # post-build must poll, validate, and collect that execution too.
+          if ! grep -Fxq "$AWS_ACCOUNT_ID" "$EXPECTED_ACCOUNTS_FILE"; then
+            printf '%s\n' "$AWS_ACCOUNT_ID" >> "$EXPECTED_ACCOUNTS_FILE"
+          fi
           mkdir -p /tmp/execution_arns
+
+          record_failure() {
+            local account_id="$1"
+            local stage="$2"
+            local reason="$3"
+            printf '%s\t%s\t%s\n' "$account_id" "$stage" "$reason" >> "$ASSESSMENT_FAILURES_FILE"
+          }
 
           for accountId in $account_list; do
             echo "Processing account $accountId"
@@ -198,7 +232,7 @@ phases:
             CREDS=$(aws sts assume-role --role-arn arn:$AWS_PARTITION:iam::$accountId:role/service-role/$MEMBER_ROLE --role-session-name AIMLSecurityAssessment --output json 2>/dev/null)
             if [[ $? -ne 0 || -z "$CREDS" ]]; then
               echo "ERROR: Failed to assume role in account $accountId"
-              failed_accounts+=($accountId)
+              record_failure "$accountId" "deployment" "Failed to assume the member role"
               continue
             fi
 
@@ -210,15 +244,20 @@ phases:
 
             if [[ -z "$AWS_ACCESS_KEY_ID" || "$AWS_ACCESS_KEY_ID" == "null" ]]; then
               echo "ERROR: Failed to extract credentials for account $accountId"
-              failed_accounts+=($accountId)
+              record_failure "$accountId" "deployment" "AssumeRole returned incomplete credentials"
               unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
               continue
             fi
 
             echo "Deploying to account $accountId"
-            if ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name "aiml-security-$accountId" --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --resolve-s3 --region "$AWS_DEFAULT_REGION" --parameter-overrides "$SAM_TARGET_REGIONS_PARAMETER" "$SAM_REQUIRE_BEDROCK_ZERO_DATA_RETENTION_PARAMETER" "$SAM_REQUIRE_MARKETPLACE_ENDPOINT_CMK_PARAMETER" "$SAM_REQUIRE_AGENTCORE_ONLINE_EVALUATION_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_MANUAL_APPROVAL_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_CMK_PARAMETER" "$SAM_AGENTCORE_TOKEN_VAULT_ID_PARAMETER" "$SAM_APPROVED_EXTERNAL_ACCOUNT_IDS_PARAMETER" "$SAM_APPROVED_ORGANIZATION_IDS_PARAMETER"; then
+            if ! recover_failed_stack aws-sam-cli-managed-default || ! recover_failed_stack "aiml-security-$accountId"; then
+              echo "ERROR: Failed to recover deployment stack for account $accountId"
+              record_failure "$accountId" "deployment" "Failed to recover a failed CloudFormation stack"
+              unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+              continue
+            elif ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name "aiml-security-$accountId" --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --resolve-s3 --region "$AWS_DEFAULT_REGION" --parameter-overrides "$SAM_TARGET_REGIONS_PARAMETER" "$SAM_REQUIRE_BEDROCK_ZERO_DATA_RETENTION_PARAMETER" "$SAM_REQUIRE_MARKETPLACE_ENDPOINT_CMK_PARAMETER" "$SAM_REQUIRE_AGENTCORE_ONLINE_EVALUATION_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_MANUAL_APPROVAL_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_CMK_PARAMETER" "$SAM_AGENTCORE_TOKEN_VAULT_ID_PARAMETER" "$SAM_APPROVED_EXTERNAL_ACCOUNT_IDS_PARAMETER" "$SAM_APPROVED_ORGANIZATION_IDS_PARAMETER"; then
               echo "ERROR: Deploy failed for account $accountId"
-              failed_accounts+=($accountId)
+              record_failure "$accountId" "deployment" "SAM deployment failed"
               unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
               continue
             fi
@@ -226,53 +265,64 @@ phases:
             STATE_MACHINE_ARN=$(aws cloudformation describe-stacks --stack-name aiml-security-$accountId --query 'Stacks[0].Outputs[?OutputKey==`AIMLAssessmentStateMachineArn`].OutputValue' --output text 2>/dev/null)
             if [[ $STATE_MACHINE_ARN != "" && $STATE_MACHINE_ARN != "None" ]]; then
               if EXECUTION_ARN=$(aws stepfunctions start-execution --state-machine-arn $STATE_MACHINE_ARN --input "{\"accountId\":\"$accountId\",\"enableResponsibleAIGRC\":\"$ENABLE_RESPONSIBLE_AI_GRC\",\"enableOWASP\":\"$ENABLE_OWASP\"}" --query 'executionArn' --output text); then
-                echo "Started execution: $EXECUTION_ARN"
-                # Save execution ARN for post-build phase
-                echo "$EXECUTION_ARN" > /tmp/execution_arns/$accountId.txt
+                if [[ -n "$EXECUTION_ARN" && "$EXECUTION_ARN" != "None" ]]; then
+                  echo "Started execution: $EXECUTION_ARN"
+                  echo "$EXECUTION_ARN" > /tmp/execution_arns/$accountId.txt
+                else
+                  echo "ERROR: Step Functions returned an empty execution ARN for account $accountId"
+                  record_failure "$accountId" "execution-start" "Step Functions returned an empty execution ARN"
+                fi
               else
-                echo "WARNING: Failed to start Step Function execution for account $accountId"
+                echo "ERROR: Failed to start Step Function execution for account $accountId"
+                record_failure "$accountId" "execution-start" "Failed to start the Step Functions execution"
               fi
             else
-              echo "WARNING: No State Machine ARN found for account $accountId"
+              echo "ERROR: No State Machine ARN found for account $accountId"
+              record_failure "$accountId" "execution-start" "The deployed stack did not return a state-machine ARN"
             fi
 
             unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
           done
 
           echo "Deploying to management account $AWS_ACCOUNT_ID"
-          # Clean up any leftover SAM managed stack from previous failed runs
-          SAM_STATUS=$(aws cloudformation describe-stacks --stack-name aws-sam-cli-managed-default --query 'Stacks[0].StackStatus' --output text 2>/dev/null)
-          if [[ "$SAM_STATUS" == "ROLLBACK_COMPLETE" || "$SAM_STATUS" == "DELETE_FAILED" ]]; then
-            echo "Cleaning up leftover SAM managed stack (status: $SAM_STATUS)"
-            aws cloudformation delete-stack --stack-name aws-sam-cli-managed-default
-            aws cloudformation wait stack-delete-complete --stack-name aws-sam-cli-managed-default 2>/dev/null || true
-          fi
-          if ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name aiml-security-mgmt --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --resolve-s3 --region "$AWS_DEFAULT_REGION" --parameter-overrides "$SAM_TARGET_REGIONS_PARAMETER" "$SAM_REQUIRE_BEDROCK_ZERO_DATA_RETENTION_PARAMETER" "$SAM_REQUIRE_MARKETPLACE_ENDPOINT_CMK_PARAMETER" "$SAM_REQUIRE_AGENTCORE_ONLINE_EVALUATION_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_MANUAL_APPROVAL_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_CMK_PARAMETER" "$SAM_AGENTCORE_TOKEN_VAULT_ID_PARAMETER" "$SAM_APPROVED_EXTERNAL_ACCOUNT_IDS_PARAMETER" "$SAM_APPROVED_ORGANIZATION_IDS_PARAMETER"; then
+          if ! recover_failed_stack aws-sam-cli-managed-default || ! recover_failed_stack aiml-security-mgmt; then
+            echo "ERROR: Failed to recover deployment stack for management account"
+            record_failure "$AWS_ACCOUNT_ID" "deployment" "Failed to recover a failed CloudFormation stack"
+          elif ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name aiml-security-mgmt --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --resolve-s3 --region "$AWS_DEFAULT_REGION" --parameter-overrides "$SAM_TARGET_REGIONS_PARAMETER" "$SAM_REQUIRE_BEDROCK_ZERO_DATA_RETENTION_PARAMETER" "$SAM_REQUIRE_MARKETPLACE_ENDPOINT_CMK_PARAMETER" "$SAM_REQUIRE_AGENTCORE_ONLINE_EVALUATION_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_MANUAL_APPROVAL_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_CMK_PARAMETER" "$SAM_AGENTCORE_TOKEN_VAULT_ID_PARAMETER" "$SAM_APPROVED_EXTERNAL_ACCOUNT_IDS_PARAMETER" "$SAM_APPROVED_ORGANIZATION_IDS_PARAMETER"; then
             echo "ERROR: Deploy failed for management account"
-            failed_accounts+=($AWS_ACCOUNT_ID)
+            record_failure "$AWS_ACCOUNT_ID" "deployment" "SAM deployment failed"
           else
             STATE_MACHINE_ARN=$(aws cloudformation describe-stacks --stack-name aiml-security-mgmt --query 'Stacks[0].Outputs[?OutputKey==`AIMLAssessmentStateMachineArn`].OutputValue' --output text 2>/dev/null)
             if [[ $STATE_MACHINE_ARN != "" && $STATE_MACHINE_ARN != "None" ]]; then
               if MGMT_EXECUTION_ARN=$(aws stepfunctions start-execution --state-machine-arn $STATE_MACHINE_ARN --input "{\"accountId\":\"$AWS_ACCOUNT_ID\",\"enableResponsibleAIGRC\":\"$ENABLE_RESPONSIBLE_AI_GRC\",\"enableOWASP\":\"$ENABLE_OWASP\"}" --query 'executionArn' --output text); then
-                echo "Started management account execution: $MGMT_EXECUTION_ARN"
-                # Save execution ARN for post-build phase
-                echo "$MGMT_EXECUTION_ARN" > /tmp/execution_arns/$AWS_ACCOUNT_ID.txt
+                if [[ -n "$MGMT_EXECUTION_ARN" && "$MGMT_EXECUTION_ARN" != "None" ]]; then
+                  echo "Started management account execution: $MGMT_EXECUTION_ARN"
+                  echo "$MGMT_EXECUTION_ARN" > /tmp/execution_arns/$AWS_ACCOUNT_ID.txt
+                else
+                  echo "ERROR: Step Functions returned an empty execution ARN for management account"
+                  record_failure "$AWS_ACCOUNT_ID" "execution-start" "Step Functions returned an empty execution ARN"
+                fi
               else
-                echo "WARNING: Failed to start Step Function execution for management account"
+                echo "ERROR: Failed to start Step Function execution for management account"
+                record_failure "$AWS_ACCOUNT_ID" "execution-start" "Failed to start the Step Functions execution"
               fi
+            else
+              echo "ERROR: No State Machine ARN found for management account"
+              record_failure "$AWS_ACCOUNT_ID" "execution-start" "The deployed stack did not return a state-machine ARN"
             fi
           fi
 
-          # Report failed accounts
-          if [[ ${#failed_accounts[@]} -gt 0 ]]; then
-            echo "WARNING: Deployments failed for the following accounts: ${failed_accounts[*]}"
-            echo "Check logs above for specific error details"
+          if [[ -s "$ASSESSMENT_FAILURES_FILE" ]]; then
+            echo "One or more accounts could not start an assessment; post-build will process the remaining accounts and fail after reporting all gaps."
           fi
 
         else
           echo "Single account deployment"
           STACK_NAME="aiml-sec-${AWS_ACCOUNT_ID}"
-          if ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --resolve-s3 --region "$AWS_DEFAULT_REGION" --parameter-overrides "$SAM_TARGET_REGIONS_PARAMETER" "$SAM_REQUIRE_BEDROCK_ZERO_DATA_RETENTION_PARAMETER" "$SAM_REQUIRE_MARKETPLACE_ENDPOINT_CMK_PARAMETER" "$SAM_REQUIRE_AGENTCORE_ONLINE_EVALUATION_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_MANUAL_APPROVAL_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_CMK_PARAMETER" "$SAM_AGENTCORE_TOKEN_VAULT_ID_PARAMETER" "$SAM_APPROVED_EXTERNAL_ACCOUNT_IDS_PARAMETER" "$SAM_APPROVED_ORGANIZATION_IDS_PARAMETER"; then
+          if ! recover_failed_stack aws-sam-cli-managed-default || ! recover_failed_stack "$STACK_NAME"; then
+            echo "ERROR: Failed to recover deployment stack for single account"
+            exit 1
+          elif ! sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --resolve-s3 --region "$AWS_DEFAULT_REGION" --parameter-overrides "$SAM_TARGET_REGIONS_PARAMETER" "$SAM_REQUIRE_BEDROCK_ZERO_DATA_RETENTION_PARAMETER" "$SAM_REQUIRE_MARKETPLACE_ENDPOINT_CMK_PARAMETER" "$SAM_REQUIRE_AGENTCORE_ONLINE_EVALUATION_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_MANUAL_APPROVAL_PARAMETER" "$SAM_REQUIRE_AGENT_REGISTRY_CMK_PARAMETER" "$SAM_AGENTCORE_TOKEN_VAULT_ID_PARAMETER" "$SAM_APPROVED_EXTERNAL_ACCOUNT_IDS_PARAMETER" "$SAM_APPROVED_ORGANIZATION_IDS_PARAMETER"; then
             echo "ERROR: SAM deploy failed for single account"
             exit 1
           fi
@@ -334,21 +384,24 @@ phases:
         echo "Step Function poll timeout set to ${sf_poll_timeout}s (CodeBuild timeout: ${BUILD_TIMEOUT_MINUTES:-60}m, buffer: ${SF_POLL_BUFFER_SECONDS}s, floor: ${SF_POLL_FLOOR_SECONDS}s)"
 
         if [[ $MULTI_ACCOUNT_SCAN = 'true' ]]; then
-          echo "Getting list of accounts for post-build processing"
-          if [[ $MULTI_ACCOUNT_LIST_OVERRIDE != '' ]]; then
-            account_list=${MULTI_ACCOUNT_LIST_OVERRIDE//,/ }
-          else
-            if ! account_list=$(aws organizations list-accounts --query 'Accounts[?Status==`ACTIVE`].Id' --output text); then
-              echo "ERROR: Failed to retrieve account list from AWS Organizations"
-              exit 1
-            fi
+          EXPECTED_ACCOUNTS_FILE=/tmp/expected_accounts.txt
+          if [[ ! -s "$EXPECTED_ACCOUNTS_FILE" ]]; then
+            echo "ERROR: Expected account list was not persisted by the build phase"
+            exit 1
           fi
+          account_list=$(tr '\n' ' ' < "$EXPECTED_ACCOUNTS_FILE")
           echo "Account list for post-build processing: $account_list"
 
-          # Track failures
-          upload_failed=false
-          sf_failed=false
-          failed_accounts=()
+          # Continue the failure ledger created during the build phase.
+          ASSESSMENT_FAILURES_FILE=/tmp/assessment_failures.tsv
+          touch "$ASSESSMENT_FAILURES_FILE"
+
+          record_failure() {
+            local account_id="$1"
+            local stage="$2"
+            local reason="$3"
+            printf '%s\t%s\t%s\n' "$account_id" "$stage" "$reason" >> "$ASSESSMENT_FAILURES_FILE"
+          }
 
           # Clean up any existing account-files directory to ensure fresh start
           echo "Cleaning up existing account-files directory"
@@ -366,7 +419,7 @@ phases:
               CREDS=$(aws sts assume-role --role-arn arn:$AWS_PARTITION:iam::$accountId:role/service-role/$MEMBER_ROLE --role-session-name AIMLSecurityAssessment --output json 2>/dev/null)
               if [[ $? -ne 0 || -z "$CREDS" ]]; then
                 echo "ERROR: Failed to assume role for account $accountId in post-build"
-                failed_accounts+=($accountId)
+                record_failure "$accountId" "result-collection" "Failed to assume the member role"
                 continue
               fi
 
@@ -377,15 +430,17 @@ phases:
 
               if [[ -z "$AWS_ACCESS_KEY_ID" || "$AWS_ACCESS_KEY_ID" == "null" ]]; then
                 echo "ERROR: Failed to extract credentials for account $accountId in post-build"
-                failed_accounts+=($accountId)
+                record_failure "$accountId" "result-collection" "AssumeRole returned incomplete credentials"
+                unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
                 continue
               fi
 
               STACK_NAME="aiml-security-$accountId"
             fi
 
-            # Wait for Step Function to complete before copying files
-            # Read the execution ARN saved from build phase
+            execution_succeeded=false
+
+            # Wait for Step Functions to complete before copying files.
             if [[ -f /tmp/execution_arns/$accountId.txt ]]; then
               EXECUTION_ARN=$(cat /tmp/execution_arns/$accountId.txt)
               echo "Waiting for Step Function execution in account $accountId: $EXECUTION_ARN"
@@ -393,52 +448,99 @@ phases:
                 timeout=$sf_poll_timeout
                 elapsed=0
                 while [[ $elapsed -lt $timeout ]]; do
-                  STATUS=$(aws stepfunctions describe-execution --execution-arn $EXECUTION_ARN --query 'status' --output text 2>/dev/null)
-                  if [[ $STATUS == "SUCCEEDED" || $STATUS == "FAILED" || $STATUS == "TIMED_OUT" || $STATUS == "ABORTED" ]]; then
-                    echo "Step Function for account $accountId completed with status: $STATUS"
-                    if [[ $STATUS == "FAILED" || $STATUS == "TIMED_OUT" || $STATUS == "ABORTED" ]]; then
-                      echo "ERROR: Step Function did not succeed for account $accountId (status: $STATUS)"
-                      sf_failed=true
-                    fi
+                  if ! STATUS=$(aws stepfunctions describe-execution --execution-arn "$EXECUTION_ARN" --query 'status' --output text 2>/dev/null); then
+                    echo "ERROR: Failed to poll Step Functions execution for account $accountId"
+                    record_failure "$accountId" "execution" "Failed to query the Step Functions execution"
                     break
                   fi
-                  echo "Step Function for account $accountId still running (status: $STATUS)... waiting 30 seconds"
+                  case "$STATUS" in
+                    SUCCEEDED)
+                      echo "Step Function for account $accountId completed successfully"
+                      execution_succeeded=true
+                      break
+                      ;;
+                    FAILED|TIMED_OUT|ABORTED|PENDING_REDRIVE)
+                      echo "ERROR: Step Function did not succeed for account $accountId (status: $STATUS)"
+                      record_failure "$accountId" "execution" "Step Functions completed with status $STATUS"
+                      break
+                      ;;
+                    RUNNING)
+                      ;;
+                    *)
+                      echo "ERROR: Step Functions returned unexpected status '$STATUS' for account $accountId"
+                      record_failure "$accountId" "execution" "Step Functions returned unexpected status $STATUS"
+                      break
+                      ;;
+                  esac
+                  echo "Step Function for account $accountId still running... waiting 30 seconds"
                   sleep 30
                   elapsed=$((elapsed + 30))
                 done
-                if [[ $elapsed -ge $timeout ]]; then
-                  echo "WARNING: Timeout waiting for Step Function completion in account $accountId"
+                if [[ $execution_succeeded != true && $elapsed -ge $timeout ]]; then
+                  echo "ERROR: Timeout waiting for Step Function completion in account $accountId"
+                  record_failure "$accountId" "execution" "Timed out waiting for Step Functions completion"
                 fi
+              else
+                echo "ERROR: Invalid execution ARN for account $accountId"
+                record_failure "$accountId" "execution" "The saved execution ARN was empty"
               fi
             else
-              echo "WARNING: No execution ARN file found for account $accountId - execution may not have started"
+              echo "ERROR: No execution ARN file found for account $accountId"
+              record_failure "$accountId" "execution" "No execution ARN was saved during deployment"
             fi
 
-            # Now copy files from the completed assessment
-            ACCOUNT_BUCKET=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].Outputs[?OutputKey==`AssessmentBucketName`].OutputValue' --output text 2>/dev/null)
+            if [[ $execution_succeeded != true ]]; then
+              if [[ $accountId != $AWS_ACCOUNT_ID ]]; then
+                unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+              fi
+              continue
+            fi
+
+            if ! ACCOUNT_BUCKET=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --query 'Stacks[0].Outputs[?OutputKey==`AssessmentBucketName`].OutputValue' --output text 2>/dev/null); then
+              ACCOUNT_BUCKET=""
+            fi
             if [[ $ACCOUNT_BUCKET != "" && $ACCOUNT_BUCKET != "None" ]]; then
               echo "Copying files from $ACCOUNT_BUCKET to local storage"
               mkdir -p /tmp/account-files/$accountId
+              execution_id="${EXECUTION_ARN##*:}"
 
-              # List bucket contents first for debugging
-              echo "Bucket contents for $accountId:"
-              if ! aws s3 ls s3://$ACCOUNT_BUCKET/; then
-                echo "WARNING: Failed to list bucket contents for $accountId"
+              if ! aws s3 cp "s3://$ACCOUNT_BUCKET/" "/tmp/account-files/$accountId/" --recursive --exclude "*" --include "*_security_report_${execution_id}*.csv" --include "security_assessment_single_account_*.html" --exclude "*/" "${fs_exclude_args[@]}"; then
+                echo "ERROR: Failed to copy assessment artifacts for account $accountId"
+                record_failure "$accountId" "artifact-copy" "Failed to copy assessment artifacts from the account bucket"
+                rm -rf "/tmp/account-files/$accountId"
+              else
+                required_artifact_prefixes=(bedrock sagemaker agentcore agent_registry)
+                if [[ $ENABLE_RESPONSIBLE_AI_GRC == "true" ]]; then
+                  required_artifact_prefixes+=(responsible_ai_grc)
+                fi
+                if [[ $ENABLE_OWASP == "true" ]]; then
+                  required_artifact_prefixes+=(owasp)
+                fi
+
+                artifacts_complete=true
+                for artifact_prefix in "${required_artifact_prefixes[@]}"; do
+                  artifact_match=$(find "/tmp/account-files/$accountId" -maxdepth 1 -type f -name "${artifact_prefix}_security_report_${execution_id}*.csv" -print -quit)
+                  if [[ -z "$artifact_match" ]]; then
+                    echo "ERROR: Missing $artifact_prefix CSV for account $accountId and execution $execution_id"
+                    record_failure "$accountId" "artifact-validation" "Missing $artifact_prefix CSV for execution $execution_id"
+                    artifacts_complete=false
+                  fi
+                done
+
+                html_match=$(find "/tmp/account-files/$accountId" -maxdepth 1 -type f -name "security_assessment_single_account_*.html" -print -quit)
+                if [[ -z "$html_match" ]]; then
+                  echo "ERROR: Missing HTML report for account $accountId"
+                  record_failure "$accountId" "artifact-validation" "Missing the per-account HTML report"
+                  artifacts_complete=false
+                fi
+
+                if [[ $artifacts_complete != true ]]; then
+                  rm -rf "/tmp/account-files/$accountId"
+                fi
               fi
-
-              if ! aws s3 cp s3://$ACCOUNT_BUCKET/ /tmp/account-files/$accountId/ --recursive --exclude "*" --include "*.csv" --include "*.html" --exclude "*/" "${fs_exclude_args[@]}"; then
-                echo "WARNING: No files to copy or copy failed from $accountId"
-              fi
-
-              # Show what was actually copied
-              echo "Files copied for $accountId:"
-              ls -la /tmp/account-files/$accountId/ 2>/dev/null || echo "No files in directory"
-
-              # Flatten any nested directories
-              find /tmp/account-files/$accountId -type f \( -name "*.csv" -o -name "*.html" \) -exec mv {} /tmp/account-files/$accountId/ \; 2>/dev/null || true
-              find /tmp/account-files/$accountId -type d -empty -delete 2>/dev/null || true
             else
-              echo "WARNING: No assessment bucket found for $accountId (STACK_NAME: $STACK_NAME)"
+              echo "ERROR: No assessment bucket found for $accountId (STACK_NAME: $STACK_NAME)"
+              record_failure "$accountId" "result-collection" "The deployed stack did not return an assessment bucket"
             fi
 
             if [[ $accountId != $AWS_ACCOUNT_ID ]]; then
@@ -459,32 +561,32 @@ phases:
               echo "Uploading files for account $accountId (overwriting existing)"
               if ! aws s3 sync /tmp/account-files/$accountId/ s3://$BUCKET_REPORT/$accountId/ "${fs_exclude_args[@]}"; then
                 echo "ERROR: Failed to upload files for $accountId"
-                upload_failed=true
+                record_failure "$accountId" "artifact-upload" "Failed to upload account artifacts to the central report bucket"
               fi
             else
-              echo "WARNING: No directory found for account $accountId"
+              echo "ERROR: No validated artifact directory found for account $accountId"
+              record_failure "$accountId" "artifact-validation" "No complete artifact set was available for consolidation"
             fi
           done
 
-          # Create consolidated HTML report using separate script
-          echo "Creating consolidated HTML report..."
-          if ! python3 ../consolidate_html_reports.py; then
-            echo "ERROR: Failed to create consolidated HTML report"
-            upload_failed=true
+          if [[ -s "$ASSESSMENT_FAILURES_FILE" ]]; then
+            echo "Skipping the consolidated report because one or more accounts have incomplete coverage."
+          else
+            echo "Creating consolidated HTML report..."
+            if ! python3 ../consolidate_html_reports.py; then
+              echo "ERROR: Failed to create consolidated HTML report"
+              record_failure "$AWS_ACCOUNT_ID" "consolidation" "Failed to create or upload the consolidated HTML report"
+            fi
           fi
 
-          # Report failures
-          if [[ ${#failed_accounts[@]} -gt 0 ]]; then
-            echo "WARNING: Post-build processing failed for the following accounts: ${failed_accounts[*]}"
-          fi
-
-          if [[ $upload_failed == true ]]; then
-            echo "ERROR: One or more uploads or report generation failed. Check logs above for details."
-            exit 1
-          fi
-
-          if [[ $sf_failed == true ]]; then
-            echo "ERROR: One or more Step Function executions failed. Check Step Functions console for details."
+          if [[ -s "$ASSESSMENT_FAILURES_FILE" ]]; then
+            echo "==========================================="
+            echo "Multi-account assessment incomplete"
+            echo "Account | Stage | Reason"
+            while IFS=$'\t' read -r failed_account failed_stage failed_reason; do
+              printf '%s | %s | %s\n' "$failed_account" "$failed_stage" "$failed_reason"
+            done < "$ASSESSMENT_FAILURES_FILE"
+            echo "==========================================="
             exit 1
           fi
 

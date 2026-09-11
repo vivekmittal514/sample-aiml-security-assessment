@@ -77,7 +77,9 @@ class TestFS07AgentBoundariesNewPaths:
         }
         c.get_agent.side_effect = _client_error("AccessDeniedException")
         mock_client.return_value = c
-        result = app.check_bedrock_agent_action_boundaries({})
+        result = app.check_bedrock_agent_action_boundaries(
+            {"role_permissions": {}, "user_permissions": {}}
+        )
         _assert_structure(result)
         # Should PASS (no issues found, agent was skipped)
         assert result["status"] == "PASS"
@@ -91,7 +93,9 @@ class TestFS07AgentBoundariesNewPaths:
         }
         c.get_agent.return_value = {"agent": {"agentResourceRoleArn": ""}}
         mock_client.return_value = c
-        result = app.check_bedrock_agent_action_boundaries({})
+        result = app.check_bedrock_agent_action_boundaries(
+            {"role_permissions": {}, "user_permissions": {}}
+        )
         _assert_structure(result)
         assert result["status"] == "PASS"
 
@@ -274,12 +278,17 @@ class TestFS12ScpPaths:
                         "Statement": [
                             {
                                 "Effect": "Deny",
-                                "Action": "bedrock:InvokeModel",
-                                "Condition": {
-                                    "StringNotEquals": {
-                                        "bedrock:ModelId": ["anthropic.claude-v2"]
-                                    }
-                                },
+                                "Action": [
+                                    "bedrock:InvokeModel",
+                                    "bedrock:InvokeModelWithResponseStream",
+                                    "bedrock:CreateModelInvocationJob",
+                                ],
+                                "NotResource": [
+                                    "arn:aws:bedrock:*::foundation-model/"
+                                    "anthropic.claude-v2",
+                                    "arn:aws:bedrock:*:123456789012:"
+                                    "inference-profile/approved-*",
+                                ],
                             }
                         ]
                     }

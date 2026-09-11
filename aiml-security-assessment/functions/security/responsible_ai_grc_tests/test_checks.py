@@ -15,6 +15,7 @@ All boto3 clients are patched via unittest.mock so no real AWS calls are made.
 
 import json
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -71,36 +72,26 @@ def _assert_advisory_retag(result, check_id):
         )
 
 
-_KB_ACTIONS_WITH_RESOURCE_SCOPE = frozenset(
-    {
-        "bedrock:allowvendedlogdeliveryforresource",
-        "bedrock:associateagentknowledgebase",
-        "bedrock:createdatasource",
-        "bedrock:deletedatasource",
-        "bedrock:deleteknowledgebase",
-        "bedrock:deleteknowledgebasedocuments",
-        "bedrock:deleteresourcepolicy",
-        "bedrock:disassociateagentknowledgebase",
-        "bedrock:getagentknowledgebase",
-        "bedrock:getdatasource",
-        "bedrock:getingestionjob",
-        "bedrock:getknowledgebase",
-        "bedrock:getknowledgebasedocuments",
-        "bedrock:getresourcepolicy",
-        "bedrock:ingestknowledgebasedocuments",
-        "bedrock:listdatasources",
-        "bedrock:listingestionjobs",
-        "bedrock:listknowledgebasedocuments",
-        "bedrock:listtagsforresource",
-        "bedrock:putresourcepolicy",
-        "bedrock:retrieve",
-        "bedrock:startingestionjob",
-        "bedrock:stopingestionjob",
-        "bedrock:updatedatasource",
-        "bedrock:updateagentknowledgebase",
-        "bedrock:updateknowledgebase",
-    }
+_BEDROCK_AUTHORIZATION_REFERENCE = (
+    Path(__file__).parent
+    / "fixtures"
+    / "bedrock_knowledge_base_authorization_reference.json"
 )
+
+
+def _load_kb_resource_scopable_actions() -> frozenset[str]:
+    """Load Bedrock actions with a knowledge-base resource type from AWS's snapshot."""
+    reference = json.loads(_BEDROCK_AUTHORIZATION_REFERENCE.read_text())
+    assert reference["Service"] == "bedrock"
+    assert reference["Version"]
+    return frozenset(
+        f"bedrock:{action['Name'].lower()}"
+        for action in reference["Actions"]
+        if any(resource["Name"] == "knowledge-base" for resource in action["Resources"])
+    )
+
+
+_KB_ACTIONS_WITH_RESOURCE_SCOPE = _load_kb_resource_scopable_actions()
 
 _KB_ACTIONS_WITHOUT_RESOURCE_SCOPE = frozenset(
     {
@@ -710,9 +701,22 @@ class TestFS07AgentActionBoundaries:
         c = MagicMock()
         c.list_agents.return_value = {"agentSummaries": []}
         mock_client.return_value = c
-        result = app.check_bedrock_agent_action_boundaries({})
+        result = app.check_bedrock_agent_action_boundaries(
+            {"role_permissions": {}, "user_permissions": {}}
+        )
         _assert_finding_structure(result)
         assert any(r["Status"] == "N/A" for r in result["csv_data"])
+
+    @patch("finserv_app.boto3.client")
+    def test_missing_cache_returns_incomplete_na(self, mock_client):
+        result = app.check_bedrock_agent_action_boundaries(None)
+
+        row = result["csv_data"][0]
+        assert row["Check_ID"] == "FS-07"
+        assert row["Status"] == "N/A"
+        assert row["Severity"] == "Informational"
+        assert "permissions cache" in row["Finding_Details"]
+        mock_client.assert_not_called()
 
     @patch("finserv_app.boto3.client")
     def test_warn_wildcard_permissions(
@@ -767,7 +771,9 @@ class TestFS07AgentActionBoundaries:
     @patch("finserv_app.boto3.client")
     def test_error_on_exception(self, mock_client):
         mock_client.side_effect = RuntimeError("agent error")
-        result = app.check_bedrock_agent_action_boundaries({})
+        result = app.check_bedrock_agent_action_boundaries(
+            {"role_permissions": {}, "user_permissions": {}}
+        )
         assert result["status"] == "ERROR"
 
 
@@ -1261,14 +1267,20 @@ class TestFS22KnowledgeBaseIamLeastPrivilege:
         _assert_finding_structure(result)
         assert result["status"] == "PASS"
 
-    @patch("finserv_app.boto3.client")
-    def test_error_on_exception(self, mock_client):
-        """FS-22 only reads permission_cache (no boto3 calls). To trigger
-        the error path, pass a cache that causes an exception during iteration."""
-        # A non-dict value for role_permissions will cause .items() to fail
+    def test_missing_cache_returns_incomplete_na(self):
+        result = app.check_knowledge_base_iam_least_privilege(None)
+
+        row = result["csv_data"][0]
+        assert row["Check_ID"] == "FS-22"
+        assert row["Status"] == "N/A"
+        assert row["Severity"] == "Informational"
+        assert "permissions cache" in row["Finding_Details"]
+
+    def test_malformed_cache_returns_incomplete_na(self):
         bad_cache = {"role_permissions": "not-a-dict"}
         result = app.check_knowledge_base_iam_least_privilege(bad_cache)
-        assert result["status"] == "ERROR"
+        assert result["status"] == "N/A"
+        assert result["csv_data"][0]["Status"] == "N/A"
 
     def test_single_statement_dict_no_crash_wildcard(self):
         """REQ-3: a policy whose Statement is a single dict (not a list) must not
@@ -1366,8 +1378,10 @@ class TestFS22KnowledgeBaseIamLeastPrivilege:
             for r in result["csv_data"]
         )
 
-    def test_resource_scope_action_matrix_matches_authorization_reference(self):
-        """Pin the full FS-22 action matrix to prevent false positives or gaps."""
+    def test_resource_scope_action_matrix_matches_checked_in_authorization_reference(
+        self,
+    ):
+        """FS-22 matches the AWS Bedrock knowledge-base resource-type snapshot."""
         assert app._KB_ACTIONS_WITH_RESOURCE_SCOPE == _KB_ACTIONS_WITH_RESOURCE_SCOPE
 
     @pytest.mark.parametrize("action", sorted(_KB_ACTIONS_WITH_RESOURCE_SCOPE))
@@ -1635,7 +1649,10 @@ class TestFS27AutomatedReasoningPolicies:
         mock_client.return_value = c
         result = app.check_automated_reasoning_policies()
         _assert_finding_structure(result)
-        assert any(r["Status"] == "N/A" for r in result["csv_data"])
+        finding = next(r for r in result["csv_data"] if r["Status"] == "N/A")
+        assert "Run CodeBuild to redeploy the SAM application" in finding["Resolution"]
+        assert "ResponsibleAIGRCAssessmentFunction" in finding["Resolution"]
+        assert "member-role" not in finding["Resolution"].lower()
 
     @patch("finserv_app.boto3.client")
     def test_error_on_exception(self, mock_client):

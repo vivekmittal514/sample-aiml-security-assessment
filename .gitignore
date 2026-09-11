@@ -4,7 +4,7 @@
 .claude/
 .codex/
 .mcp.json
-
+.codegraph/
 
 # AWS SAM build artifacts
 aiml-security-assessment/.aws-sam/

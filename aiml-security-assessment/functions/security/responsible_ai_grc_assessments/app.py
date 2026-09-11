@@ -88,6 +88,20 @@ GLOBAL_REGION_LABEL = "Global"
 # ---------------------------------------------------------------------------
 
 
+def _is_valid_permissions_cache(cache: Any) -> bool:
+    """Return whether cache has the IAM inventory shape produced upstream."""
+    return (
+        isinstance(cache, dict)
+        and isinstance(cache.get("role_permissions"), dict)
+        and isinstance(cache.get("user_permissions"), dict)
+    )
+
+
+def _has_role_permissions_cache(cache: Any) -> bool:
+    """Return whether a role-only control has the collection it needs."""
+    return isinstance(cache, dict) and isinstance(cache.get("role_permissions"), dict)
+
+
 def get_permissions_cache(execution_id: str) -> Optional[Dict[str, Any]]:
     """Retrieve IAM permissions cache from S3 (same pattern as other assessments)."""
     try:
@@ -95,7 +109,13 @@ def get_permissions_cache(execution_id: str) -> Optional[Dict[str, Any]]:
         s3_key = f"permissions_cache_{execution_id}.json"
         s3_bucket = os.environ.get("AIML_ASSESSMENT_BUCKET_NAME")
         response = s3_client.get_object(Bucket=s3_bucket, Key=s3_key)
-        return json.loads(response["Body"].read().decode("utf-8"))
+        cache = json.loads(response["Body"].read().decode("utf-8"))
+        if not _is_valid_permissions_cache(cache):
+            logger.error(
+                f"Permissions cache has an invalid schema for execution {execution_id}"
+            )
+            return None
+        return cache
     except ClientError as e:
         logger.warning(f"Could not load permissions cache: {e}")
         return None
@@ -106,6 +126,37 @@ def get_permissions_cache(execution_id: str) -> Optional[Dict[str, Any]]:
 
 def _empty_findings(check_name: str) -> Dict[str, Any]:
     return {"check_name": check_name, "status": "PASS", "details": "", "csv_data": []}
+
+
+def _permission_cache_unavailable_findings(
+    check_id: str, finding_name: str
+) -> Dict[str, Any]:
+    """Emit an explicit incomplete row for a cache-dependent GRC control."""
+    details = (
+        "The IAM permissions cache is missing, unreadable, or malformed, so this "
+        "identity-based control could not be assessed."
+    )
+    return {
+        "check_name": finding_name,
+        "status": "N/A",
+        "details": details,
+        "csv_data": [
+            create_finding(
+                check_id=check_id,
+                finding_name=f"{finding_name} Incomplete",
+                finding_details=details,
+                resolution=(
+                    "Review the IAM Permission Caching task and the execution-scoped "
+                    "permissions_cache_<execution-id>.json object, then rerun the "
+                    "assessment."
+                ),
+                reference="https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html",
+                severity="Informational",
+                status="N/A",
+                compliance_frameworks=COMPLIANCE_MAP[check_id],
+            )
+        ],
+    }
 
 
 def _bucket_name_from_arn(bucket_arn: str) -> str:
@@ -1450,6 +1501,11 @@ def check_bedrock_agent_action_boundaries(permission_cache) -> Dict[str, Any]:
     (no wildcard actions on sensitive services like s3:*, iam:*, ec2:*).
     COMPLIANCE_PLACEHOLDER: [SR 11-7, FFIEC CAT Cyber Risk Management]
     """
+    if not _has_role_permissions_cache(permission_cache):
+        return _permission_cache_unavailable_findings(
+            "FS-07", "Agent Action Boundary Check"
+        )
+
     findings = _empty_findings("Agent Action Boundary Check")
     try:
         bedrock_agent = boto3.client("bedrock-agent", config=boto3_config)
@@ -1973,8 +2029,12 @@ def check_scp_model_access_restrictions() -> Dict[str, Any]:
                         "including unapproved third-party models."
                     ),
                     resolution=(
-                        "1. Create an SCP that denies bedrock:InvokeModel for model IDs not on the approved list.\n"
-                        "2. Use bedrock:ModelId condition key to allowlist approved models.\n"
+                        "1. Create an SCP that denies bedrock:InvokeModel, "
+                        "bedrock:InvokeModelWithResponseStream, and "
+                        "bedrock:CreateModelInvocationJob outside approved model access.\n"
+                        "2. Use Resource or NotResource with approved foundation-model, "
+                        "custom-model, provisioned-model, and inference-profile ARNs to "
+                        "express the allowlist.\n"
                         "3. Maintain a model inventory and update the SCP when models are approved/retired."
                     ),
                     reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
@@ -1989,7 +2049,10 @@ def check_scp_model_access_restrictions() -> Dict[str, Any]:
                     check_id="FS-12",
                     finding_name="Bedrock SCPs Found",
                     finding_details=f"SCPs referencing Bedrock: {', '.join(bedrock_scps)}.",
-                    resolution="Verify SCPs use bedrock:ModelId conditions to allowlist approved models.",
+                    resolution=(
+                        "Verify the SCPs deny inference outside approved model and "
+                        "inference-profile ARNs using Resource or NotResource scoping."
+                    ),
                     reference="https://docs.aws.amazon.com/bedrock/latest/userguide/security_iam_id-based-policy-examples.html",
                     severity="High",
                     status="Passed",
@@ -2692,6 +2755,8 @@ _KB_ACTIONS_WITH_RESOURCE_SCOPE = frozenset(
         "bedrock:retrieve",
         "bedrock:startingestionjob",
         "bedrock:stopingestionjob",
+        "bedrock:tagresource",
+        "bedrock:untagresource",
         "bedrock:updatedatasource",
         "bedrock:updateagentknowledgebase",
         "bedrock:updateknowledgebase",
@@ -2715,6 +2780,11 @@ def check_knowledge_base_iam_least_privilege(permission_cache) -> Dict[str, Any]
     require a wildcard resource and must not create self-findings.
     COMPLIANCE_PLACEHOLDER: [NYDFS 500.06, FFIEC CAT, PCI-DSS 12.3.2]
     """
+    if not _has_role_permissions_cache(permission_cache):
+        return _permission_cache_unavailable_findings(
+            "FS-22", "Knowledge Base IAM Least Privilege Check"
+        )
+
     findings = _empty_findings("Knowledge Base IAM Least Privilege Check")
     try:
         issues = []
@@ -3261,22 +3331,23 @@ def check_automated_reasoning_policies() -> Dict[str, Any]:
                             "Access denied or service unavailable when listing Automated Reasoning "
                             "policies. The IAM action name (bedrock:ListAutomatedReasoningPolicies) "
                             "is correct, so the most likely causes are, in order: (1) the assessment "
-                            "MEMBER ROLE in this account was deployed before this action was added "
-                            "and has not been re-deployed; (2) an AWS Organizations SCP or permission "
-                            "boundary denies this newer Bedrock action; (3) the region does not "
+                            "Lambda execution role was deployed before this action was added and "
+                            "has not been updated; (2) an AWS Organizations SCP or permission boundary "
+                            "denies this newer Bedrock action; (3) the region does not "
                             "support ARC. ARC is available in AWS GovCloud (US) and a growing set "
                             "of commercial regions (e.g., us-east-1, us-east-2, us-west-2, "
                             "eu-central-1, eu-west-1, eu-west-3) — verify the current list in the "
                             "AWS documentation."
                         ),
                         resolution=(
-                            "1. RE-DEPLOY the member-role CloudFormation stack so the role picks up "
-                            "bedrock:ListAutomatedReasoningPolicies (templates may be current while "
-                            "the *deployed* role is stale). See deployment/1-aiml-security-member-roles.yaml "
-                            "and aiml-security-single-account.yaml.\n"
+                            "1. Run CodeBuild to redeploy the SAM application so the SAM-created "
+                            "ResponsibleAIGRCAssessmentFunction execution role picks up "
+                            "bedrock:ListAutomatedReasoningPolicies from "
+                            "aiml-security-assessment/template.yaml or "
+                            "template-multi-account.yaml.\n"
                             "2. Check for an Organizations SCP / permission boundary denying the action.\n"
                             "3. Confirm the assessed region supports Automated Reasoning checks.\n"
-                            "4. Re-run the assessment after re-deploying."
+                            "4. Re-run the assessment after redeploying."
                         ),
                         reference="https://docs.aws.amazon.com/IAM/latest/UserGuide/troubleshoot_access-denied.html",
                         severity="Low",
@@ -8040,10 +8111,7 @@ def lambda_handler(event, context):
     region_scopes = _get_region_scopes(event)
 
     execution_id = event.get("Execution", {}).get("Name", "local-test")
-    permission_cache = get_permissions_cache(execution_id) or {
-        "role_permissions": {},
-        "user_permissions": {},
-    }
+    permission_cache = get_permissions_cache(execution_id)
     inventory = collect_resource_inventory()  # NEW: once per invocation
 
     # Run every check from the registry. If a check produces no rows for ANY

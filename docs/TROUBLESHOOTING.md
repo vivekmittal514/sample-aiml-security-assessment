@@ -182,10 +182,14 @@ Responsible AI GRC findings, which is worse than a visible error.
 
 **Symptoms:** CodeBuild fails with a `TARGET_REGIONS` validation error, or the report scans fewer or different regions than expected.
 
+The provided deployment is validated only in the standard AWS commercial
+partition. `TargetRegions` controls regional coverage within that partition;
+it does not enable or validate deployment in AWS GovCloud (US) or AWS China.
+
 **Solutions:**
 
 - Leave `TargetRegions` empty to scan only the deployment region
-- Use `all` to scan the union of regions returned by boto3 for Amazon Bedrock, Amazon SageMaker AI, and Amazon Bedrock AgentCore
+- Use `all` to scan the union of commercial regions returned by boto3 for Amazon Bedrock, Amazon SageMaker AI, Amazon Bedrock AgentCore, and AWS Agent Registry. Because current endpoint metadata does not enumerate AgentCore or Agent Registry regions, the resolver conservatively includes the commercial partition's region catalog; unsupported service/region combinations appear as informational `N/A`
 - Use a comma- or space-separated list, such as `us-east-1,us-west-2,eu-west-1` or `us-east-1 us-west-2 eu-west-1`. The deployment normalizes the value before passing it to SAM
 - Confirm the services being assessed are available in each target region. If a service is unavailable or has no resources in a region, the report can show `N/A` or no resource-specific findings for that service and region
 - Confirm the account is opted in to any opt-in regions you include
@@ -498,6 +502,34 @@ aws s3api get-bucket-policy --bucket <infrastructure-assessment-bucket-name>
 
 If per-account reports are missing, also check the SAM assessment stack's `AssessmentBucketName` output for that account and confirm the files were created there.
 
+### Investigate Incomplete Control Findings
+
+An informational `N/A` row whose finding name ends in `Incomplete` means the
+scanner could not establish whether that control passed or failed. Bedrock API
+access-denied responses and unexpected AgentCore check errors use the affected
+control ID, such as `BR-17`, `AC-04`, or `AG-24`, so the missing evidence is
+visible without increasing the security-failure count.
+
+Find the matching Lambda invocation in the Step Functions execution and review
+its CloudWatch logs. Correct the missing SAM Lambda permission, unavailable API,
+throttling, malformed input, or code error shown there, then rerun the
+assessment. Do not interpret an incomplete row as evidence that the workload is
+compliant.
+
+### Investigate Incomplete IAM Permission Cache Findings
+
+Bedrock, SageMaker, AgentCore, AWS Agent Registry, and Responsible AI GRC
+identity-based controls read
+`permissions_cache_<execution-id>.json` from the per-account SAM assessment
+bucket. If the object is missing, unreadable, malformed, or lacks the expected
+role and user collections, affected controls appear as informational `N/A`
+rows instead of passes.
+
+Review the **IAM Permission Caching** task in the Step Functions execution,
+then check the caching Lambda logs and confirm the execution-scoped object
+exists in the bucket. Correct the IAM or S3 error and rerun the complete
+assessment; do not reuse a cache from another execution.
+
 ### Monitor AWS Step Functions Executions
 
 1. Navigate to **AWS Step Functions** in the target account
@@ -540,7 +572,14 @@ You can automate regular assessments using Amazon EventBridge scheduled rules.
 
 **Q: What AWS regions are supported?**
 
-A: The framework is designed for standard AWS commercial regions where Amazon Bedrock, Amazon SageMaker AI, or Amazon Bedrock AgentCore are available. Leave `TargetRegions` empty for the deployment region, set it to `all` to resolve the union of the regions reported for those three services, or provide an explicit comma- or space-separated list. AWS Agent Registry then runs in every selected region. AWS GovCloud and AWS China regions may require template modifications.
+A: The framework is validated and supported only in the standard AWS commercial
+partition (`aws`). Leave `TargetRegions` empty for the deployment region, set
+it to `all` to resolve assessed-service regions in the commercial partition,
+or provide an explicit comma- or space-separated list of commercial regions.
+AWS GovCloud (US) (`aws-us-gov`) and AWS China (`aws-cn`) deployments are not
+currently validated or supported. Supporting them requires code changes,
+partition-specific service availability review, and end-to-end deployment
+testing; template modifications alone are not sufficient.
 
 **Q: Does this work if I don't have any AI/ML resources deployed yet?**
 

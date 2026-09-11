@@ -1335,7 +1335,7 @@ def _bedrock_event(region="us-east-1", region_index=0):
 class TestBedrockHandlerMultiRegion:
     """lambda_handler primary-region gating + availability probe (BR-00/BR-01/BR-03)."""
 
-    def _run_handler_unavailable(self, mock_client, event):
+    def _run_handler_unavailable(self, mock_client, event, cache_missing=False):
         """Drive the handler down the 'Bedrock unavailable' early-return path and
         return the findings captured via generate_csv_report. The availability
         probe raises EndpointConnectionError so no regional checks run."""
@@ -1355,7 +1355,11 @@ class TestBedrockHandlerMultiRegion:
             patch.object(
                 bedrock_app,
                 "get_permissions_cache",
-                return_value={"role_permissions": {}, "user_permissions": {}},
+                return_value=(
+                    None
+                    if cache_missing
+                    else {"role_permissions": {}, "user_permissions": {}}
+                ),
             ),
             patch.object(bedrock_app, "generate_csv_report", side_effect=fake_csv),
             patch.object(
@@ -1386,6 +1390,22 @@ class TestBedrockHandlerMultiRegion:
         # The availability finding itself is tagged with the scanned region.
         br00 = [r for r in rows if r["Check_ID"] == "BR-00"]
         assert br00 and br00[0]["Region"] == "ap-south-2"
+
+    @patch("bedrock_app.boto3.client")
+    def test_missing_cache_emits_incomplete_global_rows_not_passes(self, mock_client):
+        resp, findings = self._run_handler_unavailable(
+            mock_client,
+            _bedrock_event(region="ap-south-2", region_index=0),
+            cache_missing=True,
+        )
+        assert resp["statusCode"] == 200
+
+        rows = [row for finding in findings for row in finding.get("csv_data", [])]
+        cache_rows = [row for row in rows if row["Check_ID"] in {"BR-01", "BR-03"}]
+        assert {row["Check_ID"] for row in cache_rows} == {"BR-01", "BR-03"}
+        assert all(row["Status"] == "N/A" for row in cache_rows)
+        assert all(row["Severity"] == "Informational" for row in cache_rows)
+        assert all("permissions cache" in row["Finding_Details"] for row in cache_rows)
 
     @patch("bedrock_app.boto3.client")
     def test_non_primary_region_skips_global_iam_checks(self, mock_client):
@@ -1855,6 +1875,13 @@ class TestBR15CrossAccountGuardrails:
         # not Failed — a permission gap is not a security misconfiguration.
         assert findings[0]["Status"] == "N/A"
         assert findings[0]["Check_ID"] == "BR-15"
+        for action in (
+            "organizations:DescribeOrganization",
+            "organizations:ListRoots",
+            "organizations:ListPolicies",
+            "organizations:ListTargetsForPolicy",
+        ):
+            assert action in findings[0]["Resolution"]
 
     def test_br15_schema_valid(self):
         check = bedrock_app.check_bedrock_cross_account_guardrails
@@ -1958,7 +1985,7 @@ class TestBR16GuardrailTier:
         assert findings[0]["Severity"] == "Medium"
 
     @patch("bedrock_app.boto3.client")
-    def test_br16_access_denied_returns_failed(self, mock_client):
+    def test_br16_access_denied_returns_incomplete_na(self, mock_client):
         check = bedrock_app.check_bedrock_guardrail_tier
 
         bedrock_client = MagicMock()
@@ -1970,7 +1997,8 @@ class TestBR16GuardrailTier:
         result = check(region="us-east-1")
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
         assert findings[0]["Check_ID"] == "BR-16"
 
     @patch("bedrock_app.boto3.client")
@@ -2101,7 +2129,7 @@ class TestBR17CustomModelKMSEncryption:
         assert findings[0]["Severity"] == "High"
 
     @patch("bedrock_app.boto3.client")
-    def test_br17_access_denied_returns_failed(self, mock_client):
+    def test_br17_access_denied_returns_incomplete_na(self, mock_client):
         check = bedrock_app.check_bedrock_custom_model_kms_encryption
 
         bedrock_client = MagicMock()
@@ -2115,7 +2143,8 @@ class TestBR17CustomModelKMSEncryption:
         result = check(region="us-east-1")
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
         assert findings[0]["Check_ID"] == "BR-17"
 
     def test_br17_schema_valid(self):
@@ -2245,7 +2274,7 @@ class TestBR18ModelEvaluations:
         assert findings[0]["Check_ID"] == "BR-18"
 
     @patch("bedrock_app.boto3.client")
-    def test_br18_access_denied_returns_failed(self, mock_client):
+    def test_br18_access_denied_returns_incomplete_na(self, mock_client):
         check = bedrock_app.check_bedrock_model_evaluations
 
         bedrock_client = MagicMock()
@@ -2257,7 +2286,8 @@ class TestBR18ModelEvaluations:
         result = check(region="us-east-1")
         findings = extract_csv_data(result)
         assert len(findings) >= 1
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
         assert findings[0]["Check_ID"] == "BR-18"
 
     @patch("bedrock_app.boto3.client")
@@ -2961,7 +2991,7 @@ class TestBR26GuardrailPIIFilters:
         assert findings[0]["Severity"] == "High"
 
     @patch("bedrock_app.boto3.client")
-    def test_br26_access_denied_returns_failed(self, mock_client):
+    def test_br26_access_denied_returns_incomplete_na(self, mock_client):
         check = bedrock_app.check_bedrock_guardrail_pii_filters
         bedrock_client = MagicMock()
         bedrock_client.list_guardrails.side_effect = ClientError(
@@ -2971,7 +3001,8 @@ class TestBR26GuardrailPIIFilters:
 
         result = check(region="us-east-1")
         findings = extract_csv_data(result)
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
         assert findings[0]["Check_ID"] == "BR-26"
 
     def test_br26_schema_valid(self):
@@ -3247,7 +3278,7 @@ class TestBR30ImportedModelKMS:
         assert findings[0]["Severity"] == "High"
 
     @patch("bedrock_app.boto3.client")
-    def test_br30_access_denied_returns_failed(self, mock_client):
+    def test_br30_access_denied_returns_incomplete_na(self, mock_client):
         check = bedrock_app.check_bedrock_imported_model_kms_encryption
         mock_client.return_value = self._bedrock_client(
             [],
@@ -3258,7 +3289,8 @@ class TestBR30ImportedModelKMS:
 
         result = check(region="us-east-1")
         findings = extract_csv_data(result)
-        assert findings[0]["Status"] == "Failed"
+        assert findings[0]["Status"] == "N/A"
+        assert findings[0]["Severity"] == "Informational"
         assert findings[0]["Check_ID"] == "BR-30"
 
     @patch("bedrock_app.boto3.client")

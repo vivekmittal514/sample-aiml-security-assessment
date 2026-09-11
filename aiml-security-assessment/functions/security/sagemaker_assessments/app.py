@@ -182,6 +182,15 @@ def list_model_package_group_summaries(
     return groups
 
 
+def _is_valid_permissions_cache(cache: Any) -> bool:
+    """Return whether cache has the IAM inventory shape produced upstream."""
+    return (
+        isinstance(cache, dict)
+        and isinstance(cache.get("role_permissions"), dict)
+        and isinstance(cache.get("user_permissions"), dict)
+    )
+
+
 def get_permissions_cache(execution_id: str) -> Optional[Dict[str, Any]]:
     """
     Retrieve and parse the permissions cache JSON file from S3
@@ -206,6 +215,13 @@ def get_permissions_cache(execution_id: str) -> Optional[Dict[str, Any]]:
             # Read and parse the JSON content
             json_content = response["Body"].read().decode("utf-8")
             permissions_cache = json.loads(json_content)
+
+            if not _is_valid_permissions_cache(permissions_cache):
+                logger.error(
+                    "Permissions cache has an invalid schema for execution "
+                    f"{execution_id}"
+                )
+                return None
 
             logger.info(
                 f"Successfully retrieved permissions cache for execution {execution_id}"
@@ -233,6 +249,35 @@ def get_permissions_cache(execution_id: str) -> Optional[Dict[str, Any]]:
             f"Unexpected error retrieving permissions cache: {str(e)}", exc_info=True
         )
         return None
+
+
+def _permission_cache_unavailable_result(region: str) -> Dict[str, Any]:
+    """Emit an explicit incomplete row for the cache-dependent SageMaker control."""
+    details = (
+        "The IAM permissions cache is missing, unreadable, or malformed, so the "
+        "SageMaker IAM permissions and stale-access control could not be assessed."
+    )
+    return {
+        "check_name": "SageMaker IAM Permissions Check",
+        "status": "N/A",
+        "details": details,
+        "csv_data": [
+            create_finding(
+                check_id="SM-02",
+                finding_name="SageMaker IAM Permissions Check Incomplete",
+                finding_details=details,
+                resolution=(
+                    "Review the IAM Permission Caching task and the execution-scoped "
+                    "permissions_cache_<execution-id>.json object, then rerun the "
+                    "assessment."
+                ),
+                reference="https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies.html",
+                severity="Informational",
+                status="N/A",
+                region=region,
+            )
+        ],
+    }
 
 
 def check_sagemaker_internet_access(region: str = "") -> Dict[str, Any]:
@@ -4678,11 +4723,11 @@ def lambda_handler(event, context):
         logger.info("Initializing IAM permission cache")
         permission_cache = get_permissions_cache(execution_id)
 
-        if not permission_cache:
+        if not _is_valid_permissions_cache(permission_cache):
             logger.error(
-                "Permission cache not found - IAM permission caching may have failed"
+                "Permission cache unavailable - IAM permission caching may have failed"
             )
-            permission_cache = {"role_permissions": {}, "user_permissions": {}}
+            permission_cache = None
 
         # Run global IAM-only checks once (on the primary region) so the same role
         # and stale-access violations are not reported once per scanned region.
@@ -4690,8 +4735,12 @@ def lambda_handler(event, context):
         # even if SageMaker is not available in the primary region.
         if is_primary_region:
             logger.info("Running global SageMaker IAM permissions check (SM-02)")
-            sagemaker_iam_findings = check_sagemaker_iam_permissions(
-                permission_cache, region=GLOBAL_REGION_LABEL
+            sagemaker_iam_findings = (
+                _permission_cache_unavailable_result(GLOBAL_REGION_LABEL)
+                if permission_cache is None
+                else check_sagemaker_iam_permissions(
+                    permission_cache, region=GLOBAL_REGION_LABEL
+                )
             )
             all_findings.append(sagemaker_iam_findings)
 

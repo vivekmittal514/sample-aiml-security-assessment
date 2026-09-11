@@ -545,6 +545,26 @@ def test_stale_access_uses_service_last_accessed_data():
     assert "61 days" in findings[-1]["Finding_Details"]
 
 
+def test_stale_access_sts_error_does_not_recommend_an_iam_grant():
+    sts = MagicMock()
+    sts.get_caller_identity.side_effect = ClientError(
+        {"Error": {"Code": "InvalidClientTokenId", "Message": "Invalid token"}},
+        "GetCallerIdentity",
+    )
+
+    with (
+        patch.object(agent_registry_app.boto3, "client", return_value=sts),
+        patch.object(agent_registry_app, "iam_client", MagicMock()),
+    ):
+        finding = agent_registry_app.check_agent_registry_stale_access(
+            _registry_permission_cache()
+        )[0]
+
+    assert finding["Status"] == "N/A"
+    assert "does not require an IAM Allow permission" in finding["Resolution"]
+    assert "Grant sts:GetCallerIdentity" not in finding["Resolution"]
+
+
 def test_provenance_missing_origin_mode_is_indeterminate():
     registry_inventory = _ready_registry_inventory()
     inventory = _record_inventory(registry_inventory)

@@ -89,6 +89,11 @@ section.
 - Added end-user guidance for determining whether an upgrade requires only a
   CodeBuild run, a top-level infrastructure stack update, or a multi-account
   member-role StackSet update.
+- Clarified that the provided deployment is validated and supported only in
+  the standard AWS commercial partition. The README, developer guide,
+  troubleshooting guidance, and `TargetRegions` parameter descriptions now
+  state that partition-aware implementation details do not establish support
+  for AWS GovCloud (US) or AWS China.
 - Updated the screenshot capture tool to enforce the repository-root `.venv`,
   install its optional Python dependencies when missing, and verify a
   venv-local Playwright Chromium browser before capturing screenshots. Capture
@@ -96,6 +101,66 @@ section.
 
 ### Fixed
 
+- Classify Bedrock access-denied results and AgentCore check execution errors
+  as incomplete informational `N/A` findings instead of security failures.
+  AgentCore now records unexpected errors under each affected `AC-*` or
+  `AG-*` control ID, preserves valid findings collected before an error, and
+  does not emit a compliant pass when a cached IAM policy cannot be parsed.
+  Confirmed workload misconfigurations remain scored failures.
+- Treat a missing, unreadable, or malformed IAM permissions cache as an
+  incomplete assessment prerequisite instead of replacing it with empty role
+  and user collections. Bedrock, SageMaker, AgentCore, and Responsible AI GRC
+  cache-dependent controls now emit explicit informational `N/A` rows rather
+  than false passes or ambiguous “no permissions” results, while independent
+  service checks continue running.
+- Correct IAM remediation guidance across Bedrock, AgentCore, Responsible AI
+  GRC, and derived OWASP findings. Bedrock model allowlists now use valid
+  model and inference-profile ARN scoping instead of the nonexistent
+  `bedrock:ModelId` condition key; BR-15 lists every Organizations permission
+  it calls; AC-09 documents the exact service-linked-role creation permission
+  and condition; AC-11 lists the complete KMS permissions and constraints for
+  policy-engine encryption; and FS-27 directs operators to redeploy the
+  SAM-created Lambda execution role through CodeBuild instead of changing the
+  multi-account member role. Agent Registry stale-access errors no longer
+  recommend granting `sts:GetCallerIdentity`, which requires no IAM Allow.
+- Correct Bedrock Agents, Flows, Knowledge Bases, and Prompt Management
+  remediation guidance to use the valid `bedrock:` IAM namespace instead of
+  the `bedrock-agent` boto3 client name.
+- Flag wildcard-resource `bedrock:TagResource` and `bedrock:UntagResource`
+  grants in FS-22 when reviewing Bedrock Knowledge Base IAM policies.
+- Recover assessment deployment stacks in `ROLLBACK_COMPLETE` or
+  `DELETE_FAILED` before rerunning SAM deployment. The build now performs this
+  recovery for member-account, multi-account management, and single-account
+  paths, using narrowly scoped `cloudformation:DeleteStack` permissions for
+  assessment and SAM-managed stacks.
+- Fail multi-account CodeBuild runs when any expected account cannot deploy,
+  start or complete its Step Functions execution, expose its assessment
+  bucket, or produce and upload the current execution's required CSV and HTML
+  artifacts. The separately launched management-account assessment is always
+  included in the expected set, including when `MultiAccountListOverride`
+  contains only member accounts. Healthy accounts still complete and upload
+  their individual results, but a consolidated report is withheld when
+  coverage is incomplete, and the build prints every affected account, stage,
+  and reason before exiting unsuccessfully.
+- Fail report generation when HTML rendering or S3 upload raises an exception,
+  so Step Functions and CodeBuild cannot treat an uploaded error page as a
+  successful assessment report. Before rendering, the report Lambda also
+  requires a non-empty execution-scoped CSV from every regional service in
+  every resolved target region, plus the one-time Responsible AI GRC artifact
+  whenever that assessment or OWASP is enabled. The execution-scoped IAM
+  permissions cache is still removed on both successful and failed
+  report-generation attempts.
+- Stop OWASP inventory pagination when an AWS API repeats a continuation token,
+  preventing OW-11 or OW-12 from looping until the Lambda timeout.
+- Include AWS Agent Registry in `TargetRegions=all` discovery and use the
+  deployment partition's region catalog when AgentCore or Agent Registry
+  endpoint metadata does not enumerate regions.
+- Restore `bedrock-agentcore:GetTokenVault` on `Resource: "*"` for AC-14.
+  Although the service reference documents a token-vault resource type, the
+  runtime authorization request is evaluated against `"*"`. The scoped policy
+  therefore returned access denied and silently changed a failed token-vault
+  customer-managed-KMS check into informational `N/A`; the Agentic AI and
+  OWASP findings derived from AC-14 now receive the real result again.
 - Restore CodeBuild and cross-account member-role access to start and poll the
   SAM-generated `AIMLAssessmentStateMachine-*` state machines. The
   least-privilege policies now explicitly include the generated state-machine
@@ -157,23 +222,28 @@ Apply these updates in order.
    `deployment/1-aiml-security-member-roles.yaml` changed. It creates the
    member-role customer-managed deployment policy and narrows
    `AIMLSecurityMemberRole` to deployment, execution-polling, and
-   report-retrieval operations; assessment service API permissions remain on
-   SAM Lambda execution roles.
+   report-retrieval operations, including narrowly scoped recovery of failed
+   assessment or SAM-managed stacks; assessment service API permissions remain
+   on SAM Lambda execution roles.
 2. **Multi-account central infrastructure update required next** because
    `deployment/2-aiml-security-codebuild.yaml` changed with the AWS Agent
-   Registry baselines and least-privilege CodeBuild deployment policy. This
-   update also removes the obsolete conditional local member-role resource if
-   an older stack still tracks it.
+   Registry baselines, least-privilege CodeBuild deployment policy, and
+   narrowly scoped failed-stack recovery. This update also removes the obsolete
+   conditional local member-role resource if an older stack still tracks it.
 3. **Single-account infrastructure update required** because
    `deployment/aiml-security-single-account.yaml` changed with the same
-   baselines and CodeBuild policy hardening. This update also removes the
-   obsolete local member-role resource if an older stack still tracks it.
+   baselines, CodeBuild policy hardening, and failed-stack recovery. This
+   update also removes the obsolete local member-role resource if an older
+   stack still tracks it.
 4. **CodeBuild run required last** to deploy the updated assessment code,
    dependencies, `buildspec.yml`, and AWS SAM templates
    (`aiml-security-assessment/template.yaml` and
-   `aiml-security-assessment/template-multi-account.yaml`), which create the
-   standalone AWS Agent Registry assessment Lambda and update the state
-   machine.
+   `aiml-security-assessment/template-multi-account.yaml`). The updated
+   buildspec also makes incomplete multi-account coverage fail the run instead
+   of publishing an apparently complete consolidated report, and report
+   rendering or upload failures now fail the Step Functions execution. The SAM
+   templates create the standalone AWS Agent Registry assessment Lambda and
+   update the state machine.
 
 Deployments pinned to a tag or commit must update the `GitHubBranch`
 CloudFormation parameter to the revision containing these changes before

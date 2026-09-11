@@ -3,7 +3,7 @@ import csv
 import os
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from io import StringIO
 from botocore.config import Config
 from botocore.exceptions import ClientError
@@ -63,6 +63,69 @@ def _flag_is_true(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() == "true"
     return False
+
+
+def validate_assessment_artifacts(
+    assessment_results: Dict[str, Any],
+    execution_id: str,
+    original_input: Dict[str, Any],
+) -> None:
+    """Require a non-empty report artifact for every expected assessment run."""
+    resolved_regions = (original_input.get("ResolvedRegions") or {}).get("regions")
+    if (
+        not isinstance(resolved_regions, list)
+        or not resolved_regions
+        or not all(isinstance(region, str) and region for region in resolved_regions)
+    ):
+        raise ValueError(
+            "ResolvedRegions.regions is required to validate assessment coverage"
+        )
+
+    per_region_categories = {
+        "bedrock": "bedrock",
+        "sagemaker": "sagemaker",
+        "agentcore": "agentcore",
+        "agent-registry": "agent_registry",
+    }
+    owasp_enabled = _flag_is_true(original_input.get("enableOWASP"))
+    responsible_ai_grc_enabled = _flag_is_true(
+        original_input.get("enableResponsibleAIGRC")
+    )
+    if owasp_enabled:
+        per_region_categories["owasp"] = "owasp"
+
+    expected_artifacts = []
+    for category, fragment in per_region_categories.items():
+        for region in resolved_regions:
+            expected_artifacts.append(
+                (
+                    category,
+                    f"{fragment}_security_report_{execution_id}_{region}".lower(),
+                )
+            )
+
+    # Responsible AI GRC runs once on RegionIndex 0. It is also required when
+    # OWASP is enabled because its FS-* rows feed the OWASP mappings even when
+    # the Responsible AI GRC section is hidden from the customer-facing report.
+    if responsible_ai_grc_enabled or owasp_enabled:
+        expected_artifacts.append(
+            (
+                "responsible-ai-grc",
+                f"responsible_ai_grc_security_report_{execution_id}".lower(),
+            )
+        )
+
+    incomplete_artifacts = []
+    for category, assessment_type in expected_artifacts:
+        rows = (assessment_results.get(category) or {}).get(assessment_type)
+        if not isinstance(rows, list) or not rows:
+            incomplete_artifacts.append(f"{assessment_type}.csv")
+
+    if incomplete_artifacts:
+        raise ValueError(
+            f"Incomplete assessment artifacts for execution {execution_id}: "
+            + ", ".join(incomplete_artifacts)
+        )
 
 
 def get_assessment_results(execution_id: str, account_id: str = None) -> Dict[str, Any]:
@@ -326,19 +389,15 @@ def generate_html_report(
         "timestamp", datetime.now(timezone.utc).strftime("%B %d, %Y %H:%M:%S UTC")
     )
 
-    try:
-        return generate_report_from_template(
-            all_findings=all_findings,
-            service_findings=service_findings,
-            service_stats=service_stats,
-            mode="single",
-            account_id=account_id,
-            timestamp=timestamp,
-            regions=sorted(regions) if regions else None,
-        )
-    except Exception as e:
-        logger.error(f"Error generating HTML report: {str(e)}", exc_info=True)
-        return f"""<!DOCTYPE html><html><body><h1>Error Generating Report</h1><p>An error occurred: {str(e)}</p></body></html>"""
+    return generate_report_from_template(
+        all_findings=all_findings,
+        service_findings=service_findings,
+        service_stats=service_stats,
+        mode="single",
+        account_id=account_id,
+        timestamp=timestamp,
+        regions=sorted(regions) if regions else None,
+    )
 
 
 def get_current_utc_date():
@@ -352,7 +411,7 @@ def build_single_account_report_key(timestamp: str) -> str:
 
 def write_html_to_s3(
     html_content: str, s3_bucket: str, execution_id: str, account_id: str = None
-) -> Optional[str]:
+) -> str:
     """
     Write HTML report to S3
 
@@ -362,30 +421,37 @@ def write_html_to_s3(
         execution_id (str): Step Functions execution ID
 
     Returns:
-        Optional[str]: S3 key if successful, None if error
+        str: S3 key for the uploaded report
     """
+    s3_client = boto3.client("s3", config=boto3_config)
+
+    # Generate the S3 key for local bucket (no account folder needed)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    s3_key = build_single_account_report_key(timestamp)
+
+    # Upload the HTML file. Any failure must propagate so Step Functions cannot
+    # treat a missing report as a successful assessment.
+    s3_client.put_object(
+        Bucket=s3_bucket,
+        Key=s3_key,
+        Body=html_content,
+        ContentType="text/html",
+        Metadata={"execution-id": execution_id},
+    )
+
+    logger.info(f"Successfully wrote HTML report to s3://{s3_bucket}/{s3_key}")
+    return s3_key
+
+
+def delete_permissions_cache(s3_bucket: str, execution_id: str) -> None:
+    """Best-effort cleanup for the execution-scoped IAM permissions cache."""
     try:
+        cache_key = f"permissions_cache_{execution_id}.json"
         s3_client = boto3.client("s3", config=boto3_config)
-
-        # Generate the S3 key for local bucket (no account folder needed)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        s3_key = build_single_account_report_key(timestamp)
-
-        # Upload the HTML file
-        s3_client.put_object(
-            Bucket=s3_bucket,
-            Key=s3_key,
-            Body=html_content,
-            ContentType="text/html",
-            Metadata={"execution-id": execution_id},
-        )
-
-        logger.info(f"Successfully wrote HTML report to s3://{s3_bucket}/{s3_key}")
-        return s3_key
-
-    except Exception as e:
-        logger.error(f"Error writing HTML report to S3: {str(e)}", exc_info=True)
-        return None
+        s3_client.delete_object(Bucket=s3_bucket, Key=cache_key)
+        logger.info(f"Deleted permissions cache: {cache_key}")
+    except Exception as cache_err:
+        logger.warning(f"Failed to delete permissions cache: {cache_err}")
 
 
 def lambda_handler(event, context):
@@ -395,18 +461,20 @@ def lambda_handler(event, context):
     logger.info("Generating Consolidated HTML Report")
     logger.info(f"Event: {event}")
 
+    execution_id = None
+    s3_bucket = None
     try:
         # Get execution ID from event
         execution_id = event["Execution"]["Name"]
-        # Get account ID using STS GetCallerIdentity
-        sts_client = boto3.client("sts", config=boto3_config)
-        account_id = sts_client.get_caller_identity()["Account"]
         # Get S3 bucket name from environment variable
         s3_bucket = os.environ.get("AIML_ASSESSMENT_BUCKET_NAME")
         if not s3_bucket:
             raise ValueError(
                 "AIML_ASSESSMENT_BUCKET_NAME environment variable is required"
             )
+        # Get account ID using STS GetCallerIdentity
+        sts_client = boto3.client("sts", config=boto3_config)
+        account_id = sts_client.get_caller_identity()["Account"]
 
         # The state machine now forces Responsible AI GRC to run whenever
         # OWASP is enabled (OWASP's FS→OW mappings need the Responsible AI
@@ -421,6 +489,11 @@ def lambda_handler(event, context):
         assessment_results = get_assessment_results(execution_id, account_id)
         if not assessment_results:
             raise ValueError(f"No assessment results found: {execution_id}")
+        validate_assessment_artifacts(
+            assessment_results,
+            execution_id,
+            original_input,
+        )
 
         # Generate HTML report
         html_content = generate_html_report(
@@ -437,16 +510,6 @@ def lambda_handler(event, context):
         # in the CodeBuild post-build phase, not here. This Lambda only generates
         # the per-account security_assessment_*.html report.
 
-        # Delete the IAM permissions cache file — it contains full policy documents
-        # and should not persist in S3 after the assessment completes
-        try:
-            cache_key = f"permissions_cache_{execution_id}.json"
-            s3_client = boto3.client("s3", config=boto3_config)
-            s3_client.delete_object(Bucket=s3_bucket, Key=cache_key)
-            logger.info(f"Deleted permissions cache: {cache_key}")
-        except Exception as cache_err:
-            logger.warning(f"Failed to delete permissions cache: {cache_err}")
-
         return {
             "statusCode": 200,
             "executionId": execution_id,
@@ -459,3 +522,8 @@ def lambda_handler(event, context):
     except Exception as e:
         logger.error(f"Error in lambda_handler: {str(e)}", exc_info=True)
         raise
+    finally:
+        # The cache contains full IAM policy documents and is no longer needed
+        # once report generation starts. Cleanup must not mask report failures.
+        if execution_id and s3_bucket:
+            delete_permissions_cache(s3_bucket, execution_id)

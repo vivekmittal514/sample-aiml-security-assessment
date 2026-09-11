@@ -350,7 +350,11 @@ OWASP_CHECK_MAPPINGS: Dict[str, List[Dict[str, str]]] = {
             "check_id": "OW-03",
             "owasp_category": "LLM03:2025 Supply Chain",
             "finding": "OWASP LLM03: SCP-Enforced Model Allowlist",
-            "resolution": "Attach an Organizations SCP that denies bedrock:InvokeModel* except for allowlisted bedrock:ModelId values.",
+            "resolution": (
+                "Attach an Organizations SCP that denies Bedrock inference outside "
+                "allowlisted model and inference-profile ARNs using Resource or "
+                "NotResource scoping."
+            ),
         }
     ],
     "FS-13": [
@@ -905,6 +909,7 @@ def _list_all_items(
     """Collect all items from list APIs that expose explicit next-token fields."""
     items: List[Dict[str, Any]] = []
     next_token: Optional[str] = None
+    seen_tokens = set()
     operation = getattr(client, operation_name)
 
     while True:
@@ -925,8 +930,14 @@ def _list_all_items(
             if isinstance(candidate, str) and candidate:
                 next_token = candidate
                 break
-        if not next_token:
+        if not next_token or next_token in seen_tokens:
+            if next_token:
+                logger.warning(
+                    f"{operation_name} repeated a pagination token; "
+                    "stopping pagination to avoid an infinite loop"
+                )
             break
+        seen_tokens.add(next_token)
 
     return items
 
@@ -1224,7 +1235,7 @@ def check_system_prompt_in_lambda_env(region: str) -> List[Dict[str, Any]]:
                 ),
                 resolution=(
                     "Move each system prompt into Amazon Bedrock Prompt Management "
-                    "(bedrock-agent:CreatePrompt) and inject a Prompt ARN into the Lambda "
+                    "(bedrock:CreatePrompt) and inject a Prompt ARN into the Lambda "
                     "env var instead of the raw text. This gives the prompt versioning, "
                     "IAM-scoped access, and centralised audit."
                 ),

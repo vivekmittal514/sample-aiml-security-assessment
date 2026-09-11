@@ -64,10 +64,16 @@ evidence that a control passed or failed.
 | -------- | --------------- | ------------------------ |
 | `BR-00` | Amazon Bedrock is unavailable or not enabled in the target region, so regional Bedrock checks were not run. | `N/A` / Informational |
 | `SM-00` | Amazon SageMaker AI is unavailable or not enabled in the target region, so regional SageMaker checks were not run. | `N/A` / Informational |
-| `AC-00` | Amazon Bedrock AgentCore is unavailable in the target region, or the AgentCore handler caught an unexpected per-check execution error. The error form is a diagnostic row, not a security-control failure. | Availability: `N/A` / Informational. Execution error: `Failed` / High. |
+| `AC-00` | Amazon Bedrock AgentCore is unavailable in the target region, or the Runtime availability probe rejected the assessment credentials before regional checks could run. Unexpected errors inside individual checks use their affected `AC-*` or `AG-*` control IDs instead. | `N/A` / Informational |
 | `AR-00` | AWS Agent Registry is unavailable in the target region, so regional `AR-03` through `AR-08` checks were not run. | `N/A` / Informational |
 | `FS-00` | No regional Bedrock, AgentCore, or SageMaker resource footprint was found, so Responsible AI GRC was not applicable to that region. | `N/A` / Informational |
 | `OW-00` | A required upstream assessment CSV was missing, so one or more mapping-derived OWASP rows could not be generated. | `N/A` / Informational |
+
+When a Bedrock API is access-denied or an AgentCore check raises an unexpected
+execution error, the affected control ID is reported as informational `N/A`
+with an incomplete-assessment message. These rows remain visible for
+troubleshooting but are excluded from scoring. A control is `Failed` only when
+the scanner successfully observes evidence that violates its baseline.
 
 `FS-00` is described in more detail in
 [Responsible AI GRC Checks](SECURITY_CHECKS_RESPONSIBLE_AI_GRC.md#fs-00--regional-scope-not-applicable-not-a-control),
@@ -121,7 +127,10 @@ investigation and remediation.
 ### SM-02: AWS IAM Permissions
 
 - **Severity:** High
-- **Description:** Identifies overly permissive policies, stale access, and IAM Identity Center configuration.
+- **Description:** Identifies overly permissive policies and stale access from
+  the shared IAM permissions cache. A missing, unreadable, or malformed cache
+  produces an informational `N/A` incomplete-assessment row rather than a
+  compliant result.
 
 ### SM-03: Data Protection
 
@@ -283,6 +292,11 @@ investigation and remediation.
 
 - **Severity:** Medium
 - **Description:** Checks for overly permissive marketplace subscription access.
+
+BR-01, BR-02, BR-03, BR-08, BR-10, and BR-21 depend on the shared IAM
+permissions cache. If that prerequisite is missing, unreadable, or malformed,
+each affected control is reported as informational `N/A`; an empty replacement
+inventory is never treated as evidence of compliance.
 
 ### BR-04: Model Invocation Logging
 
@@ -500,12 +514,12 @@ investigation and remediation.
 ### AC-02: AWS IAM Full Access
 
 - **Severity:** High
-- **Description:** Checks attached and inline policy documents for AgentCore full-access managed policies, wildcard IAM action patterns, and `Allow`/`NotAction` allow-except statements that still grant the AgentCore namespace when they apply to all resources. Only the valid `bedrock-agentcore` IAM namespace is evaluated; overly permissive `agent-registry` grants are reported by [AR-01](#ar-01-aws-iam-full-access) instead. Service-agnostic administrator-style grants are out of scope in both forms: a bare `Action: "*"` and a `NotAction` whose exclusions name no platform namespace are treated alike and not reported as AgentCore-specific grants.
+- **Description:** Checks attached and inline policy documents for AgentCore full-access managed policies, wildcard IAM action patterns, and `Allow`/`NotAction` allow-except statements that still grant the AgentCore namespace when they apply to all resources. Only the valid `bedrock-agentcore` IAM namespace is evaluated; overly permissive `agent-registry` grants are reported by [AR-01](#ar-01-aws-iam-full-access) instead. Service-agnostic administrator-style grants are out of scope in both forms: a bare `Action: "*"` and a `NotAction` whose exclusions name no platform namespace are treated alike and not reported as AgentCore-specific grants. A missing, unreadable, or malformed permissions cache is reported as informational `N/A`. If an individual cached policy document cannot be parsed, valid findings from other policies are retained and an additional informational `N/A` row marks the control incomplete; the unparsed policy cannot produce a compliant pass.
 
 ### AC-03: Stale Access
 
 - **Severity:** Low
-- **Description:** Detects unused AgentCore permissions by inspecting `Allow` and `NotAction` grants in attached and inline policy documents before querying IAM service-last-accessed history. Only the `bedrock-agentcore` namespace is evaluated; `agent-registry` grants are reported by [AR-02](#ar-02-stale-access) instead. As in AC-02, a `NotAction` whose exclusions name no platform namespace is a service-agnostic administrator grant and is not treated as an AgentCore-specific permission. Attached policy names alone are never treated as proof of access. IAM last-accessed jobs are polled within the Lambda deadline; a job that does not complete in time is reported as an indeterminate `N/A` rather than a failed control. This identifies candidate grants from the cached policy documents; it is not a complete effective-permissions simulation across boundaries, session policies, or organization controls.
+- **Description:** Detects unused AgentCore permissions by inspecting `Allow` and `NotAction` grants in attached and inline policy documents before querying IAM service-last-accessed history. Only the `bedrock-agentcore` namespace is evaluated; `agent-registry` grants are reported by [AR-02](#ar-02-stale-access) instead. As in AC-02, a `NotAction` whose exclusions name no platform namespace is a service-agnostic administrator grant and is not treated as an AgentCore-specific permission. Attached policy names alone are never treated as proof of access. IAM last-accessed jobs are polled within the Lambda deadline; a job that does not complete in time is reported as an indeterminate `N/A` rather than a failed control. A missing, unreadable, or malformed permissions cache is also reported as informational `N/A`. This identifies candidate grants from the cached policy documents; it is not a complete effective-permissions simulation across boundaries, session policies, or organization controls.
 
 ### AC-04: Observability
 
