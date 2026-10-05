@@ -47,6 +47,7 @@ PACKAGES = {
         ("s3vectors", None),
     ],
     "sagemaker_assessments": [("sagemaker", None)],
+    "agentcore_assessments": [("bedrock-agentcore", "exclude-registry")],
 }
 
 
