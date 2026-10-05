@@ -689,6 +689,8 @@ _EXPECTED_ACTIONS = {
         "agent-registry:GetRegistry",
         "agent-registry:ListRegistries",
         "agent-registry:ListRegistryRecords",
+        "events:ListRules",
+        "events:ListTargetsByRule",
         "iam:GenerateServiceLastAccessedDetails",
         "iam:GetServiceLastAccessedDetails",
         "s3:GetObject",
@@ -3167,6 +3169,9 @@ def test_assessment_reads_wildcard_only_where_iam_has_no_resource_type(template)
             "route53resolver:ListFirewallDomainLists",
             "ecr:GetRegistryScanningConfiguration",
         ),
+        ("AgentRegistrySecurityAssessmentFunction", "RegistryEventRuleInventory"): (
+            "events:ListRules",
+        ),
     }
     for (logical_id, sid), actions in wildcard.items():
         statement = _statement_block(template, logical_id, sid)
@@ -3266,6 +3271,10 @@ def test_assessment_reads_wildcard_only_where_iam_has_no_resource_type(template)
         ("AgentCoreSecurityAssessmentFunction", "DNSFirewallConfigRead"): (
             "route53resolver:GetFirewallConfig",
             "route53resolver:*:${AWS::AccountId}:firewall-config/*",
+        ),
+        ("AgentRegistrySecurityAssessmentFunction", "RegistryEventRuleTargetRead"): (
+            "events:ListTargetsByRule",
+            "events:*:${AWS::AccountId}:rule/*",
         ),
         ("AgentCoreSecurityAssessmentFunction", "CognitoUserPoolRead"): (
             "cognito-idp:DescribeUserPoolClient",
