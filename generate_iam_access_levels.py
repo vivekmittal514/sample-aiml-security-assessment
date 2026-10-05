@@ -47,7 +47,12 @@ PACKAGES = {
         ("s3vectors", None),
     ],
     "sagemaker_assessments": [("sagemaker", None)],
+    # AR-01 reads the registry resource types under both namespaces.
     "agentcore_assessments": [("bedrock-agentcore", "exclude-registry")],
+    "agent_registry_assessments": [
+        ("agent-registry", None),
+        ("bedrock-agentcore", "registry-only"),
+    ],
 }
 
 
