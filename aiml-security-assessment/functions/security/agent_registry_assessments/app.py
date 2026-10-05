@@ -2853,6 +2853,7 @@ def generate_csv_report(findings: List[Dict[str, Any]]) -> str:
         "Severity",
         "Status",
         "Region",
+        "Compliance_Frameworks",
     ]
     writer = csv.DictWriter(output, fieldnames=fields)
     writer.writeheader()
