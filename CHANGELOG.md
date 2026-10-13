@@ -82,7 +82,11 @@ section.
     mapped source check from a selected service was absent, so partial
     coverage reads as unassessed. A control whose source checks all belong to
     a deselected service gets no row and no `AISF-00` mention, because the
-    report already shows that service as Not selected.
+    report already shows that service as Not selected. The section's scope
+    text names each such control and the service that removed it, and counts
+    only the controls the report can show. A source check belongs to the
+    service whose Lambda emits it, so an `AG-` row derived from a Bedrock
+    check follows the Bedrock selection, not the AgentCore one.
   - Only a control asserted in full gets a derived row. `AISF-01` to `AISF-04`
     and `AISF-06` were retired before release, because each restated a check
     that asserts only part of its control, and the ids are never reused.

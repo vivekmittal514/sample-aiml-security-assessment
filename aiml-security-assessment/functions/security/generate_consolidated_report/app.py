@@ -8,7 +8,7 @@ from io import StringIO
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from aisf_mappings import derive_aisf_findings
+from aisf_mappings import derive_aisf_findings, omitted_aisf_controls
 from report_template import (
     COMPLIANCE_STANDARDS,
     core_service_selection,
@@ -446,6 +446,7 @@ def generate_html_report(
         service_findings=service_findings,
         service_stats=service_stats,
         service_selection=selected_services,
+        compliance_omissions={"aisf": omitted_aisf_controls(selected_services)},
         mode="single",
         account_id=account_id,
         timestamp=timestamp,

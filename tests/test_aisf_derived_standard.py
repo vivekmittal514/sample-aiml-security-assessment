@@ -20,6 +20,7 @@ file exists to catch:
    that coverage was incomplete.
 """
 
+import ast
 import csv
 import fnmatch
 import importlib.util
@@ -173,12 +174,15 @@ def _all_mappings_derived(status):
 
 
 class TestRegistryEntry(unittest.TestCase):
-    def test_entry_carries_the_eight_required_keys_plus_derived(self):
+    def test_entry_carries_the_eight_required_keys_plus_its_optional_keys(self):
         entry = _entry("aisf")
         self.assertEqual(
-            set(entry), REQUIRED_REGISTRY_KEYS | {"derived"}, msg=sorted(entry)
+            set(entry),
+            REQUIRED_REGISTRY_KEYS | {"derived", "scope_text_with_omissions"},
+            msg=sorted(entry),
         )
         self.assertIs(entry["derived"], True)
+        self.assertEqual(entry["scope_text_with_omissions"]([]), entry["scope_text"])
         self.assertEqual(entry["prefix"], "AISF-")
         self.assertEqual(entry["name"], "AWS AI Security Framework")
         self.assertEqual(entry["section_title"], "AWS AI Security Framework Findings")
@@ -819,6 +823,189 @@ class TestDeselectedServices(unittest.TestCase):
         )
 
 
+_SECURITY_DIR = os.path.join(
+    REPO_ROOT, "aiml-security-assessment", "functions", "security"
+)
+
+# Every module-level dict literal that allocates AG- ids, and the service whose
+# Lambda emits those rows. Read with ast so no producer module is imported.
+AGENTIC_ID_SOURCES = (
+    ("bedrock_assessments", "AGENTIC_BEDROCK_CHECK_MAPPINGS", "bedrock"),
+    ("agentcore_assessments", "AGENTIC_AGENTCORE_CHECK_MAPPINGS", "agentcore"),
+    ("agentcore_assessments", "NATIVE_AGENTIC_AGENTCORE_CHECK_NAMES", "agentcore"),
+    (
+        "agent_registry_assessments",
+        "AGENTIC_AGENT_REGISTRY_CHECK_MAPPINGS",
+        "agent-registry",
+    ),
+)
+
+
+def _emitted_agentic_ids():
+    """AG- id -> the set of services whose Lambda can emit it."""
+    emitters = {}
+    for package, name, service in AGENTIC_ID_SOURCES:
+        with open(
+            os.path.join(_SECURITY_DIR, package, "app.py"), encoding="utf-8"
+        ) as f:
+            tree = ast.parse(f.read())
+        node = next(
+            n.value
+            for n in tree.body
+            if isinstance(n, ast.Assign)
+            and any(getattr(t, "id", None) == name for t in n.targets)
+        )
+        literal = ast.literal_eval(node)
+        ids = (
+            {v["check_id"] for v in literal.values()}
+            if all(isinstance(v, dict) for v in literal.values())
+            else set(literal)
+        )
+        for check_id in ids:
+            emitters.setdefault(check_id, set()).add(service)
+    return emitters
+
+
+class TestAgenticSourceAttribution(unittest.TestCase):
+    """AG- rows come from three Lambdas, so the AG prefix names no one service."""
+
+    BEDROCK_AG_CONTROL = {
+        "check_id": "AISF-99",
+        "control": "AIR-TEST-01",
+        "sources": ["AG-07"],
+        "finding": "AISF AIR-TEST-01: synthetic control on a Bedrock-derived AG row",
+        "risk": "high",
+        "severity": "High",
+        "resolution": "Synthetic.",
+        "reference": "",
+    }
+
+    def _derive(self, rows, selection):
+        with patch.object(
+            aisf_mappings,
+            "AISF_DERIVED_MAP",
+            aisf_mappings.AISF_DERIVED_MAP + [self.BEDROCK_AG_CONTROL],
+        ):
+            return _derived_by_id(aisf_mappings.derive_aisf_findings(rows, selection))
+
+    def test_every_emitted_ag_id_is_attributed_to_its_emitting_service(self):
+        emitted = _emitted_agentic_ids()
+        self.assertTrue(emitted)
+        for check_id, services in emitted.items():
+            self.assertEqual(len(services), 1, f"{check_id} has two emitters")
+        self.assertEqual(
+            aisf_mappings.AGENTIC_SOURCE_SERVICE,
+            {cid: next(iter(s)) for cid, s in emitted.items()},
+        )
+
+    def test_every_mapped_source_resolves_to_a_service(self):
+        for mapping in aisf_mappings.AISF_DERIVED_MAP:
+            for source in mapping["sources"]:
+                self.assertIn(
+                    aisf_mappings.source_service(source),
+                    report_template.CORE_SERVICE_LABELS,
+                    source,
+                )
+
+    def test_a_bedrock_derived_ag_source_is_kept_when_only_agentcore_is_off(self):
+        rows = self._derive(
+            [_source_row("AG-07", "Failed")], {"bedrock": True, "agentcore": False}
+        )
+        self.assertEqual(rows["AISF-99"]["Status"], "Failed")
+
+    def test_a_bedrock_derived_ag_source_is_dropped_when_bedrock_is_off(self):
+        rows = self._derive(
+            [_source_row(cid) for cid in ("SM-18", "SM-42", "SM-09", "SM-01", "SM-03")],
+            {"bedrock": False, "agentcore": True},
+        )
+        self.assertNotIn("AISF-99", rows)
+        self.assertNotIn(aisf_mappings.AISF_COVERAGE_CHECK_ID, rows)
+
+
+class TestScopeTextNamesOmittedControls(unittest.TestCase):
+    """The AISF scope text says which controls a deselected service removed."""
+
+    SAGEMAKER_NOTE = (
+        "AISF-07 and AISF-08 are omitted because Amazon SageMaker AI was not selected"
+    )
+
+    def _html(self, selection):
+        kwargs = TestSectionRendering._kwargs(self)
+        rows = aisf_mappings.derive_aisf_findings(
+            [_source_row("BR-20", "Failed")], selection
+        )
+        kwargs["all_findings"] = rows
+        kwargs["service_findings"]["aisf"] = rows
+        kwargs["service_stats"]["aisf"] = {"passed": 0, "failed": len(rows), "na": 0}
+        kwargs["service_selection"] = selection
+        kwargs["compliance_omissions"] = {
+            "aisf": aisf_mappings.omitted_aisf_controls(selection)
+        }
+        return report_template.generate_html_report(**kwargs)
+
+    def test_omitted_controls_name_their_deselected_service(self):
+        self.assertEqual(aisf_mappings.omitted_aisf_controls({}), [])
+        self.assertEqual(
+            aisf_mappings.omitted_aisf_controls({"sagemaker": False}),
+            [("AISF-07", ["sagemaker"]), ("AISF-08", ["sagemaker"])],
+        )
+
+    def test_sagemaker_off_names_aisf_07_and_08_and_counts_what_is_shown(self):
+        html = self._html({"sagemaker": False})
+        self.assertIn(self.SAGEMAKER_NOTE, html)
+        self.assertIn(
+            "3 of the 105 in-scope AISF controls carry a derived AISF- row, "
+            "and 1 of them is in scope for this report",
+            html,
+        )
+
+    def test_all_services_selected_omits_nothing(self):
+        html = self._html({})
+        self.assertNotIn("are omitted because", html)
+        self.assertNotIn("is omitted because", html)
+        self.assertIn(_entry("aisf")["scope_text"], html)
+
+    def test_a_single_omitted_control_reads_in_the_singular(self):
+        html = report_template.generate_html_report(
+            **{
+                **self._kwargs_with_rows(),
+                "service_selection": {"bedrock": False},
+                "compliance_omissions": {
+                    "aisf": aisf_mappings.omitted_aisf_controls({"bedrock": False})
+                },
+            }
+        )
+        self.assertIn(
+            "AISF-05 is omitted because Amazon Bedrock was not selected", html
+        )
+        self.assertIn("and 2 of them are in scope for this report", html)
+
+    def _kwargs_with_rows(self):
+        kwargs = TestSectionRendering._kwargs(self)
+        rows = aisf_mappings.derive_aisf_findings(
+            [_source_row(cid) for cid in ("SM-18", "SM-42", "SM-09", "SM-01", "SM-03")],
+            {"bedrock": False},
+        )
+        kwargs["all_findings"] = rows
+        kwargs["service_findings"]["aisf"] = rows
+        kwargs["service_stats"]["aisf"] = {"passed": len(rows), "failed": 0, "na": 0}
+        return kwargs
+
+    def test_single_account_report_names_the_omitted_controls(self):
+        html = single_account.generate_html_report(
+            {
+                "account_id": "111122223333",
+                "bedrock": {
+                    "bedrock_security_report_exec_us-east-1": [
+                        _source_row("BR-20", "Passed"),
+                    ]
+                },
+            },
+            service_selection={"sagemaker": "false"},
+        )
+        self.assertIn(self.SAGEMAKER_NOTE, html)
+
+
 class TestSeveralFindingsPerSourceCheck(unittest.TestCase):
     """One incumbent check emits one finding per resource, so a leg holds many.
 
@@ -1303,6 +1490,17 @@ class TestMultiAccountConsolidator(unittest.TestCase):
             {f["Check_ID"] for f in captured["service_findings"]["aisf"]},
             {"AISF-07", "AISF-08"},
         )
+
+    def test_a_deselected_sagemaker_is_named_in_the_scope_text(self):
+        row = _source_row("BR-20", "Passed")
+        row.pop("Account_ID")
+        self._write("bedrock_security_report_exec_us-east-1.csv", [row])
+
+        with patch.dict(os.environ, {"ENABLE_SAGEMAKER": "false"}):
+            captured = self._consolidate()
+
+        html = report_template.generate_html_report(**captured)
+        self.assertIn(TestScopeTextNamesOmittedControls.SAGEMAKER_NOTE, html)
 
     def test_ai_prefix_routes_to_aisf_and_not_to_the_bedrock_fallback(self):
         row = _source_row("AISF-01")

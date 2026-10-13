@@ -94,7 +94,7 @@ omits the key.
 | a source check reported `N/A` and none failed, so no verdict is available | `N/A`, `Informational` |
 | some source checks present for the account and region, others absent, none failed | `N/A`, `Informational`, naming the absent `Check_ID`s |
 | no source check for the control present at all | no `AISF-` row for that control; the absence is reported once per account and region by `AISF-00` |
-| every source check for the control belongs to a deselected service | no `AISF-` row and no `AISF-00` mention; the service shows as Not selected |
+| every source check for the control belongs to a deselected service | no `AISF-` row and no `AISF-00` mention; the service shows as Not selected, and the section's scope text names the control as omitted because that service was not selected |
 
 A source check emits one finding per resource, so a leg normally carries several
 verdicts for one account and region. All of them are aggregated, and
@@ -299,9 +299,13 @@ the account:
 2. Append an entry to `AISF_DERIVED_MAP` with the next free `AISF-` number,
    counting the ids in `RETIRED_AISF_IDS` as taken, the incumbent `Check_ID`s,
    and the control's `risk`, `rec`, and first `src` URL copied from the AISF
-   control definition.
-3. Update the `scope_text` figures on the AISF entry in `COMPLIANCE_STANDARDS`
-   and the coverage bullet in this file.
+   control definition. A source is attributed to the service whose Lambda
+   emits it: `BR-`, `SM-`, `AC-` and `AR-` by prefix, and each `AG-` id through
+   `AGENTIC_SOURCE_SERVICE`, because Bedrock, AgentCore and Agent Registry all
+   emit `AG-` rows. `TestAgenticSourceAttribution` fails if that table drifts
+   from the three Agentic mapping dictionaries.
+3. Update the figures in `_aisf_scope_text()` in `report_template.py`, which
+   builds the AISF entry's scope text, and the coverage bullet in this file.
    `test_scope_text_states_the_denominator_and_it_reconciles` fails if the
    scope text disagrees with `AISF_DERIVED_MAP`.
 4. Add the row to the check catalogue above with its own per-control section.

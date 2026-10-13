@@ -27,7 +27,7 @@ change to a control's YAML in that repository has to be copied here by hand.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -159,14 +159,56 @@ SOURCE_PREFIX_TO_SERVICE = {
     "BR": "bedrock",
     "SM": "sagemaker",
     "AC": "agentcore",
-    "AG": "agentcore",
     "AR": "agent-registry",
 }
 
+# AG- rows are synthesized by three Lambdas, so the AG prefix names no single
+# service: each AG id belongs to the service whose Lambda emits it. Copied from
+# AGENTIC_BEDROCK_CHECK_MAPPINGS, AGENTIC_AGENTCORE_CHECK_MAPPINGS plus
+# NATIVE_AGENTIC_AGENTCORE_CHECK_NAMES, and AGENTIC_AGENT_REGISTRY_CHECK_MAPPINGS,
+# which ship in their own Lambda packages, not this one.
+# `tests/test_aisf_derived_standard.py` holds this table in step with them.
+AGENTIC_SOURCE_SERVICE = {
+    **{f"AG-{n:02d}": "bedrock" for n in (*range(1, 15), 30)},
+    **{f"AG-{n:02d}": "agentcore" for n in (*range(15, 30), 31, 32, 39)},
+    **{f"AG-{n:02d}": "agent-registry" for n in range(33, 39)},
+}
+
+
+def source_service(check_id: str) -> Optional[str]:
+    """The service switch that runs a source check, or None if unknown."""
+    check_id = check_id.upper()
+    if check_id in AGENTIC_SOURCE_SERVICE:
+        return AGENTIC_SOURCE_SERVICE[check_id]
+    return SOURCE_PREFIX_TO_SERVICE.get(check_id.split("-", 1)[0])
+
 
 def _source_selected(check_id: str, selected_services: Dict[str, bool]) -> bool:
-    service = SOURCE_PREFIX_TO_SERVICE.get(check_id.split("-", 1)[0].upper())
+    service = source_service(check_id)
     return selected_services.get(service, True) if service else True
+
+
+def omitted_aisf_controls(
+    selected_services: Optional[Dict[str, bool]] = None,
+) -> List[Tuple[str, List[str]]]:
+    """Controls `derive_aisf_findings()` skips, each with its deselected services.
+
+    The report names these in the AISF scope text, so a control that is absent
+    because its service was not selected is not mistaken for a missing row.
+    """
+    selected_services = selected_services or {}
+    omitted = []
+    for mapping in AISF_DERIVED_MAP:
+        sources = mapping["sources"]
+        if any(_source_selected(c, selected_services) for c in sources):
+            continue
+        services = []
+        for source in sources:
+            service = source_service(source)
+            if service not in services:
+                services.append(service)
+        omitted.append((mapping["check_id"], services))
+    return omitted
 
 
 def _source_check_ids() -> set:

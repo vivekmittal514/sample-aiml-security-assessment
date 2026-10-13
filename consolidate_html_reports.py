@@ -31,7 +31,7 @@ sys.path.insert(
     ),
 )
 
-from aisf_mappings import derive_aisf_findings
+from aisf_mappings import derive_aisf_findings, omitted_aisf_controls
 from report_template import (
     COMPLIANCE_STANDARDS,
     core_service_selection,
@@ -296,6 +296,7 @@ def consolidate_html_reports():
             service_findings=service_findings,
             service_stats=service_stats,
             service_selection=selected_services,
+            compliance_omissions={"aisf": omitted_aisf_controls(selected_services)},
             mode="multi",
             account_ids=list(account_ids),
             timestamp=timestamp_display,

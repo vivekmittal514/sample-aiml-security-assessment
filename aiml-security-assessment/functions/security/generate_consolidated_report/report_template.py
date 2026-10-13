@@ -149,6 +149,62 @@ AISF_ICON_SMALL = (
     '<path fill="#FFF" d="M40 14L64 26L40 38L16 26L40 14ZM40 44L22 35L16 38L40 50L64 38L58 35L40 44ZM40 56L22 47L16 50L40 62L64 50L58 47L40 56Z"/></svg></span>'
 )
 
+
+def _join_words(words: List[str]) -> str:
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+
+
+def _aisf_scope_text(omitted: Optional[List[Any]] = None) -> str:
+    """The AISF section's scope text, naming any control a deselected service removed.
+
+    `omitted` holds (check id, [service label]) pairs from
+    `aisf_mappings.omitted_aisf_controls()`. When it is non-empty the first
+    sentence also counts the derived controls this report can show.
+    """
+    if omitted:
+        groups: Dict[tuple, List[str]] = {}
+        for check_id, labels in omitted:
+            groups.setdefault(tuple(labels), []).append(check_id)
+        reasons = "; ".join(
+            f"{_join_words(ids)} {'is' if len(ids) == 1 else 'are'} omitted "
+            f"because {_join_words(list(labels))} "
+            f"{'was' if len(labels) == 1 else 'were'} not selected"
+            for labels, ids in groups.items()
+        )
+        shown = 3 - len(omitted)
+        opening = (
+            "Scope: 3 of the 105 in-scope AISF controls carry a derived AISF- "
+            f"row, and {shown} of them {'is' if shown == 1 else 'are'} in scope "
+            f"for this report: {reasons}, so this report draws no conclusion "
+            "about them. The remaining 102 are not yet rendered as rows, and "
+            "their absence from this section is not evidence of compliance. "
+        )
+    else:
+        opening = (
+            "Scope: 3 of the 105 in-scope AISF controls carry a derived AISF- "
+            "row; the remaining 102 are not yet rendered as rows, and their "
+            "absence from this section is not evidence of compliance. "
+        )
+    return opening + (
+        "A row is a "
+        "narrower claim than coverage: 64 of the 105 are covered by checks "
+        "that already ship and assert the whole control, 39 are asserted in "
+        "part, and 2 are not implementable from configuration. The "
+        "Compliance_Frameworks column on the producer rows names the rest: "
+        "the 61 covered controls without a row, and the 39 asserted in "
+        "part under a (partial) tag. AISF-01, AISF-02, "
+        "AISF-03, AISF-04 and AISF-06 are retired: each restated a check "
+        "that asserts only part of its control, so no row is derived for "
+        "them. These rows restate existing check verdicts under AISF "
+        "control ids, so they are <strong>not</strong> counted in the "
+        "framework's 277-check total. AISF-00 marks an account and region "
+        "where AISF-relevant checks ran but a mapped source check from a "
+        "selected service was absent. Preliminary and illustrative: validate the control "
+        "mapping with your Security/Compliance team before using it as "
+        "evidence."
+    )
+
+
 # COMPLIANCE_STANDARDS: registry of compliance-standard sections.
 # Each entry produces a sidebar nav item + service card + section + filter
 # option + scope chip in the report. Callers (generate_consolidated_report
@@ -157,6 +213,11 @@ AISF_ICON_SMALL = (
 #
 # Required keys: slug, name, prefix, icon, icon_small, reference_url,
 # section_title, scope_text.
+#
+# Optional key "scope_text_with_omissions": a callable taking
+# (check id, [service label]) pairs and returning the scope text. Used in place
+# of scope_text when the caller passes compliance_omissions for the slug, so the
+# text can name the controls a deselected service removed.
 #
 # Optional key "derived" (bool, default False). A derived standard runs no
 # assessment Lambda and writes no CSV to S3; its rows are computed at
@@ -209,26 +270,11 @@ COMPLIANCE_STANDARDS: List[Dict[str, Any]] = [
         # an empty value renders no "references" sentence in Assessment Scope.
         "reference_url": "",
         "section_title": "AWS AI Security Framework Findings",
-        "scope_text": (
-            "Scope: 3 of the 105 in-scope AISF controls carry a derived AISF- "
-            "row; the remaining 102 are not yet rendered as rows, and their "
-            "absence from this section is not evidence of compliance. A row is a "
-            "narrower claim than coverage: 64 of the 105 are covered by checks "
-            "that already ship and assert the whole control, 39 are asserted in "
-            "part, and 2 are not implementable from configuration. The "
-            "Compliance_Frameworks column on the producer rows names the rest: "
-            "the 61 covered controls without a row, and the 39 asserted in "
-            "part under a (partial) tag. AISF-01, AISF-02, "
-            "AISF-03, AISF-04 and AISF-06 are retired: each restated a check "
-            "that asserts only part of its control, so no row is derived for "
-            "them. These rows restate existing check verdicts under AISF "
-            "control ids, so they are <strong>not</strong> counted in the "
-            "framework's 277-check total. AISF-00 marks an account and region "
-            "where AISF-relevant checks ran but a mapped source check from a "
-            "selected service was absent. Preliminary and illustrative: validate the control "
-            "mapping with your Security/Compliance team before using it as "
-            "evidence."
-        ),
+        "scope_text": _aisf_scope_text(),
+        # Called with the controls a deselected service removed, as
+        # (check id, [service label]) pairs, when the caller passes
+        # compliance_omissions for this slug.
+        "scope_text_with_omissions": _aisf_scope_text,
         # No assessment Lambda and no S3 artifact. See the `derived` note above.
         "derived": True,
     },
@@ -945,6 +991,7 @@ def generate_html_report(
     timestamp: Optional[str] = None,
     regions: list = None,
     service_selection: Optional[Dict[str, bool]] = None,
+    compliance_omissions: Optional[Dict[str, List[Any]]] = None,
 ) -> str:
     """
     Generate HTML report from findings data.
@@ -959,6 +1006,8 @@ def generate_html_report(
         timestamp: Optional timestamp string
         regions: Optional list of region strings for multi-region filtering
         service_selection: Direct service assessments selected for this run.
+        compliance_omissions: Per compliance slug, the (check id, [service])
+            pairs left out because no source service was selected.
 
     Returns:
         Complete HTML report string
@@ -1469,6 +1518,14 @@ def generate_html_report(
         _section_title = _std.get("section_title", _name + " Findings")
         _section_title_text = _escape_text(_section_title)
         _scope_text = _std.get("scope_text", "")
+        _omitted = (compliance_omissions or {}).get(_slug)
+        if _omitted and _std.get("scope_text_with_omissions"):
+            _scope_text = _std["scope_text_with_omissions"](
+                [
+                    (check_id, [CORE_SERVICE_LABELS[s] for s in services])
+                    for check_id, services in _omitted
+                ]
+            )
         _reference_url = _safe_https_url(_std.get("reference_url", ""))
 
         compliance_nav_items.append(

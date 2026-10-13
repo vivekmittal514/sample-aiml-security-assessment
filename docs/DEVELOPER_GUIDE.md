@@ -1068,6 +1068,10 @@ step 7 do not apply; instead:
   place, the `category_slugs` comprehension in `app.py`, to keep the slug out of
   the S3 prefix list. Every other consumer keeps the slug so the section still
   renders and routes.
+- When a deselected service removes some of the standard's controls, give the
+  entry a `scope_text_with_omissions` callable and pass `compliance_omissions`
+  from both consolidators, so the scope text names what was left out. AISF
+  uses `aisf_mappings.omitted_aisf_controls()` and `_aisf_scope_text()`.
 - Register the standard and its first rows in the same change. A registered
   standard with zero rows renders nothing at all (`if _total <= 0: continue`),
   which looks exactly like a wiring bug.
