@@ -2749,7 +2749,9 @@ def test_ar10_an_or_branch_reaching_the_registry_source_is_credited():
     assert client.target_calls == ["or-approvals"]
 
 
-def test_ar10_an_or_merges_detail_types_and_narrowing_across_branches():
+def test_ar10_an_or_credits_the_detail_types_of_its_unnarrowed_branches():
+    """`$or` matches an event that any one alternative matches, so a narrowed
+    alternative cannot take away what an unnarrowed one delivers."""
     approval_types = list(agent_registry_app.REGISTRY_APPROVAL_DETAIL_TYPES)
     classification = agent_registry_app._classify_event_pattern(
         _rule(
@@ -2769,9 +2771,94 @@ def test_ar10_an_or_merges_detail_types_and_narrowing_across_branches():
     )
     assert classification == {
         "kind": "registry",
-        "detail_types": set(approval_types),
-        "narrowed_by": ["detail"],
+        "detail_types": set(approval_types[:1]),
+        "narrowed_by": [],
     }
+
+
+def test_ar10_an_or_whose_every_branch_is_narrowed_stays_narrowed():
+    approval_types = list(agent_registry_app.REGISTRY_APPROVAL_DETAIL_TYPES)
+    classification = agent_registry_app._classify_event_pattern(
+        _rule(
+            "or-narrowed",
+            {
+                "source": [agent_registry_app.REGISTRY_EVENT_SOURCE],
+                "$or": [
+                    {"detail-type": approval_types[:1], "resources": ["r1"]},
+                    {
+                        "detail-type": approval_types[1:],
+                        "detail": {"registryId": ["r1"]},
+                    },
+                ],
+            },
+        )
+    )
+    assert classification == {
+        "kind": "registry",
+        "detail_types": set(approval_types),
+        "narrowed_by": ["detail", "resources"],
+    }
+
+
+def test_ar10_an_or_with_one_narrowed_branch_passes_when_another_delivers_all():
+    findings, client = _routing_findings(
+        [
+            _rule(
+                "or-approvals",
+                {
+                    "source": [agent_registry_app.REGISTRY_EVENT_SOURCE],
+                    "$or": [
+                        {
+                            "detail-type": list(
+                                agent_registry_app.REGISTRY_APPROVAL_DETAIL_TYPES
+                            )
+                        },
+                        {"detail": {"registryId": ["aaaaaaaaaaaa"]}},
+                    ],
+                },
+            )
+        ],
+        target_arns={"or-approvals": [_SNS_TARGET]},
+    )
+    assert [f["Status"] for f in findings] == ["Passed"]
+    assert "'or-approvals' (1 target(s))" in findings[0]["Finding_Details"]
+    assert client.target_calls == ["or-approvals"]
+
+
+_DETAIL_ONLY = {"detail": {"state": ["running"]}}
+
+
+def test_ar10_a_pattern_naming_neither_source_nor_detail_type_with_a_filter_is_other():
+    assert agent_registry_app._classify_event_pattern(
+        _rule("detail-only", _DETAIL_ONLY)
+    ) == {"kind": "other"}
+
+
+@pytest.mark.parametrize(
+    ("state", "target_arns"),
+    [("DISABLED", [_SNS_TARGET]), ("ENABLED", [])],
+    ids=["disabled", "no-targets"],
+)
+def test_ar10_an_or_branch_with_only_a_detail_filter_is_not_a_registry_rule(
+    state, target_arns
+):
+    findings, client = _routing_findings(
+        [
+            _rule(
+                "ec2-or-detail",
+                {"$or": [{"source": ["aws.ec2"]}, _DETAIL_ONLY]},
+                state=state,
+            ),
+            _rule("registry-approvals", _approval_pattern()),
+        ],
+        target_arns={
+            "ec2-or-detail": target_arns,
+            "registry-approvals": [_SNS_TARGET],
+        },
+    )
+    assert [f["Status"] for f in findings] == ["Passed"]
+    assert "ec2-or-detail" not in findings[0]["Finding_Details"]
+    assert client.target_calls == ["registry-approvals"]
 
 
 def test_ar10_a_disabled_or_rule_with_no_registry_branch_is_not_reported():
@@ -2900,6 +2987,68 @@ def test_ar09_after_the_preview_end_still_reads_the_ga_namespace(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    ("when", "findings_expected"),
+    [
+        (
+            _BEFORE_PREVIEW_END,
+            [("AWS Agent Registry Read and Write in One Grant", "Failed")],
+        ),
+        (_AFTER_PREVIEW_END, [("AWS Agent Registry IAM Full Access Check", "Passed")]),
+    ],
+)
+def test_ar01_stops_reading_the_preview_namespace_after_it_ends(
+    monkeypatch, when, findings_expected
+):
+    _freeze_clock(monkeypatch, when)
+    findings = agent_registry_app.check_agent_registry_full_access(
+        _ar01_two_role_cache(_allow("bedrock-agentcore:*"))
+    )
+    assert [(f["Finding"], f["Status"]) for f in findings] == findings_expected
+
+
+def test_ar01_after_the_preview_end_still_reads_the_ga_namespace(monkeypatch):
+    _freeze_clock(monkeypatch, _AFTER_PREVIEW_END)
+    findings = agent_registry_app.check_agent_registry_full_access(
+        _ar01_two_role_cache(_allow("*"))
+    )
+    (merged,) = [
+        f
+        for f in findings
+        if f["Finding"] == "AWS Agent Registry Read and Write in One Grant"
+    ]
+    assert merged["Status"] == "Failed"
+    assert " agent-registry resource type(s)" in merged["Finding_Details"]
+    assert "bedrock-agentcore" not in merged["Finding_Details"]
+
+
+@pytest.mark.parametrize(
+    ("when", "full_access"),
+    [(_BEFORE_PREVIEW_END, True), (_AFTER_PREVIEW_END, False)],
+)
+def test_ar01_full_access_policy_in_the_preview_namespace_follows_the_clock(
+    monkeypatch, when, full_access
+):
+    _freeze_clock(monkeypatch, when)
+    cache = _ar01_two_role_cache(_allow("agent-registry:GetRegistry", _REGISTRY_A))
+    cache["role_permissions"]["preview-admin"] = {
+        "attached_policies": [
+            {
+                "name": "PreviewAgentRegistryFullAccess",
+                "document": {
+                    "Version": "2012-10-17",
+                    "Statement": _allow("bedrock-agentcore:UpdateRegistryRecord"),
+                },
+            }
+        ],
+        "inline_policies": [],
+    }
+    findings = agent_registry_app.check_agent_registry_full_access(cache)
+    assert (
+        "AWS Agent Registry IAM Full Access Policy" in [f["Finding"] for f in findings]
+    ) is full_access
+
+
+@pytest.mark.parametrize(
     ("when", "details", "resolution"),
     [
         (
@@ -2941,12 +3090,16 @@ _REGISTRY_A = "arn:aws:agent-registry:us-east-1:123456789012:registry/aaaaaaaaaa
 _REGISTRY_B = "arn:aws:agent-registry:us-east-1:123456789012:registry/bbbbbbbbbbbb"
 
 
+_RECORDS_A = f"{_REGISTRY_A}/record/*"
+_RECORDS_B = f"{_REGISTRY_B}/record/*"
+
+
 def test_ar09_publish_on_one_registry_and_approve_on_another_is_not_a_collision():
     finding = _separation_finding(
         _separation_cache(
             [
-                _allow("agent-registry:CreateRegistryRecord", f"{_REGISTRY_A}/*"),
-                _allow(f"agent-registry:{_APPROVAL_ACTION}", f"{_REGISTRY_B}/*"),
+                _allow("agent-registry:CreateRegistryRecord", _REGISTRY_A),
+                _allow(f"agent-registry:{_APPROVAL_ACTION}", _RECORDS_B),
             ]
         )
     )
@@ -2954,32 +3107,58 @@ def test_ar09_publish_on_one_registry_and_approve_on_another_is_not_a_collision(
     assert "resource scopes that overlap" in finding["Finding_Details"]
 
 
+def test_ar09_create_on_a_registry_and_approve_on_its_records_collide():
+    """CreateRegistryRecord is authorized on `registry/<id>` and
+    UpdateRegistryRecordStatus on `registry/<id>/record/*`, so the
+    least-privilege publisher and curator of one registry names two ARNs that
+    share no string. Both reduce to the registry they act in."""
+    finding = _separation_finding(
+        _separation_cache(
+            [
+                _allow("agent-registry:CreateRegistryRecord", _REGISTRY_A),
+                _allow(f"agent-registry:{_APPROVAL_ACTION}", _RECORDS_A),
+            ]
+        )
+    )
+    assert finding["Status"] == "Failed"
+    assert _listed_publish_actions(finding) == ["agent-registry:CreateRegistryRecord"]
+
+
 @pytest.mark.parametrize(
     ("publish", "approve"),
     [
-        (f"{_REGISTRY_A}/*", f"{_REGISTRY_A}/*"),
-        (f"{_REGISTRY_A}/*", f"{_REGISTRY_A}/record/rec1234"),
-        (f"{_REGISTRY_A}/*", "*"),
+        (_REGISTRY_A, f"{_REGISTRY_A}/record/rec1234"),
+        (_REGISTRY_A, "*"),
+        (_REGISTRY_A, "arn:aws:agent-registry:*:123456789012:registry/*"),
         (
-            f"{_REGISTRY_A}/*",
-            "arn:aws:agent-registry:*:123456789012:registry/*",
-        ),
-        (
-            "arn:aws:agent-registry:us-east-1:*:registry/aaaaaaaaaaaa/*",
+            "arn:aws:agent-registry:us-east-1:*:registry/aaaaaaaaaaaa",
             "arn:aws:agent-registry:*:123456789012:registry/aaaaaaaaaaaa/record/*",
         ),
         (
-            f"{_REGISTRY_A}/*",
-            "arn:aws:bedrock-agentcore:us-east-1:123456789012:registry/aaaaaaaaaaaa/*",
+            _REGISTRY_A,
+            "arn:aws:bedrock-agentcore:us-east-1:123456789012:registry/aaaaaaaaaaaa/record/*",
+        ),
+        (
+            _REGISTRY_A,
+            "arn:aws:agent-registry:us-east-1:123456789012:registry/aaaa*/record/*",
+        ),
+        (_REGISTRY_A, "arn:aws:agent-registry:us-east-1:123456789012:registry/a*1"),
+        (_REGISTRY_A, "arn:aws:agent-registry:*/record/*"),
+        (
+            "arn:*:agent-registry:us-east-1:123456789012:registry/aaaaaaaaaaaa",
+            _RECORDS_A,
         ),
     ],
     ids=[
-        "same",
         "record-in-registry",
         "any",
         "any-registry",
         "two-wildcards",
         "preview-arn",
+        "registry-id-prefix",
+        "registry-id-wildcard-spans-the-record",
+        "wildcard-spans-segments",
+        "partition-wildcard",
     ],
 )
 def test_ar09_overlapping_publish_and_approve_scopes_collide(publish, approve):
@@ -3001,15 +3180,64 @@ def test_ar09_overlapping_publish_and_approve_scopes_collide(publish, approve):
     assert _listed_publish_actions(finding) == ["agent-registry:CreateRegistryRecord"]
 
 
+@pytest.mark.parametrize(
+    "approve",
+    [
+        "arn:aws:agent-registry:us-east-1:123456789012:registry/bbbb*/record/*",
+        "arn:aws:agent-registry:us-east-1:444455556666:registry/aaaaaaaaaaaa/record/*",
+        "arn:aws:agent-registry:us-west-2:123456789012:registry/*/record/*",
+        "arn:aws:agent-registry:us-east-1:123456789012:workload-identity/*",
+    ],
+    ids=["other-registry-prefix", "other-account", "other-region", "not-a-registry"],
+)
+def test_ar09_disjoint_registry_scopes_do_not_collide(approve):
+    finding = _separation_finding(
+        _separation_cache(
+            [
+                _allow("agent-registry:CreateRegistryRecord", _REGISTRY_A),
+                _allow(f"agent-registry:{_APPROVAL_ACTION}", approve),
+            ]
+        )
+    )
+    assert finding["Status"] == "Passed"
+
+
+@pytest.mark.parametrize(
+    ("resource", "scope"),
+    [
+        (_REGISTRY_A, _REGISTRY_A),
+        (_RECORDS_A, _REGISTRY_A),
+        (f"{_REGISTRY_A}/record/rec1234", _REGISTRY_A),
+        (
+            "arn:aws:bedrock-agentcore:us-east-1:123456789012:registry/aaaaaaaaaaaa/record/*",
+            _REGISTRY_A,
+        ),
+        (
+            "arn:aws:agent-registry:us-east-1:123456789012:registry/a*1",
+            "arn:aws:agent-registry:us-east-1:123456789012:registry/a*",
+        ),
+        (
+            "arn:aws:agent-registry:us-east-1:123456789012:registry/*/record/*",
+            "arn:aws:agent-registry:us-east-1:123456789012:registry/*",
+        ),
+        ("arn:aws:agent-registry:*/record/*", "arn:aws:agent-registry:*"),
+        ("*", "*"),
+        ("arn:aws:agent-registry:us-east-1:123456789012:workload-identity/w", None),
+    ],
+)
+def test_ar09_a_resource_reduces_to_the_registries_it_reaches(resource, scope):
+    assert agent_registry_app._registry_scope(resource) == scope
+
+
 def test_ar09_a_not_resource_approval_overlaps_every_publish_scope():
     finding = _separation_finding(
         _separation_cache(
             [
-                _allow("agent-registry:CreateRegistryRecord", f"{_REGISTRY_A}/*"),
+                _allow("agent-registry:CreateRegistryRecord", _REGISTRY_A),
                 {
                     "Effect": "Allow",
                     "Action": f"agent-registry:{_APPROVAL_ACTION}",
-                    "NotResource": f"{_REGISTRY_A}/*",
+                    "NotResource": _RECORDS_A,
                 },
             ]
         )
@@ -3034,9 +3262,9 @@ def test_ar09_names_only_the_publish_actions_whose_scope_overlaps():
     finding = _separation_finding(
         _separation_cache(
             [
-                _allow("agent-registry:CreateRegistryRecord", f"{_REGISTRY_A}/*"),
-                _allow("agent-registry:UpdateRegistryRecord", f"{_REGISTRY_B}/*"),
-                _allow(f"agent-registry:{_APPROVAL_ACTION}", f"{_REGISTRY_B}/*"),
+                _allow("agent-registry:CreateRegistryRecord", _REGISTRY_A),
+                _allow("agent-registry:UpdateRegistryRecord", _RECORDS_B),
+                _allow(f"agent-registry:{_APPROVAL_ACTION}", _RECORDS_B),
             ]
         )
     )

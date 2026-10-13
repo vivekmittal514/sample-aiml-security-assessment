@@ -34,6 +34,14 @@ app = importlib.util.module_from_spec(_SPEC)
 sys.modules["agent_registry_cache_contract_app"] = app
 _SPEC.loader.exec_module(app)
 
+
+@pytest.fixture(autouse=True)
+def _before_preview_end(monkeypatch):
+    """Pin the preview-support verdict, so the `bedrock-agentcore` cases do not
+    change outcome on REGISTRY_PREVIEW_EVENT_SOURCE_END."""
+    monkeypatch.setattr(app, "_preview_support_ended", lambda: False)
+
+
 REGISTRY_ARN = "arn:aws:agent-registry:us-east-1:123456789012:registry/registry-123"
 MERGED = "AWS Agent Registry Read and Write in One Grant"
 

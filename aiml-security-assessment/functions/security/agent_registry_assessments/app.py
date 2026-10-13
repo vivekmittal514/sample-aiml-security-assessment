@@ -572,10 +572,12 @@ def _cache_completeness_findings(
 
 
 def _all_access_level_actions() -> List[str]:
+    namespaces = _registry_namespaces()
     return sorted(
         {
             f"{namespace}:{action}"
             for namespace, types in ACCESS_LEVELS.items()
+            if namespace in namespaces
             for levels in types.values()
             for action in levels["read"] + levels["write"]
         }
@@ -589,8 +591,9 @@ def _merged_read_write_grants(permissions: Dict[str, Any]) -> List[str]:
     An explicit action list separates read from write however long it is; a
     pattern or a NotAction cannot, because it grants whatever it matches. Only
     actions the identity is granted after Denies and its permissions boundary
-    count. A condition or resource scope on the Allow applies to the read and
-    the write alike, so it does not separate them and is not read.
+    count, in a namespace that still grants Registry actions. A condition or
+    resource scope on the Allow applies to the read and the write alike, so it
+    does not separate them and is not read.
     """
     effective = {
         action.lower()
@@ -739,7 +742,10 @@ def check_agent_registry_full_access(
                 *(permissions.get("attached_policies") or []),
                 *(permissions.get("group_policies") or []),
             ]
-        ) and _granted_actions(permissions, REGISTRY_ACTIONS):
+        ) and _granted_actions(
+            permissions,
+            [a for a in REGISTRY_ACTIONS if a.split(":")[0] in _registry_namespaces()],
+        ):
             full_access.append(label)
         if _has_registry_access(permissions, wildcard_only=True):
             wildcard.append(label)
@@ -1034,15 +1040,19 @@ def _preview_support_ended() -> bool:
     return datetime.now(timezone.utc).date() >= REGISTRY_PREVIEW_EVENT_SOURCE_END
 
 
-def _qualified_registry_actions(local_name: str) -> tuple[str, ...]:
-    """The namespace spellings of one Registry action that IAM still honours:
-    both until the preview namespace is retired, then `agent-registry` alone."""
-    namespaces = (
+def _registry_namespaces() -> tuple[str, ...]:
+    """The IAM namespaces that still grant Registry actions: both until the
+    preview namespace is retired, then `agent-registry` alone."""
+    return (
         (REGISTRY_IAM_NAMESPACE,)
         if _preview_support_ended()
         else REGISTRY_IAM_NAMESPACES
     )
-    return tuple(f"{namespace}:{local_name}" for namespace in namespaces)
+
+
+def _qualified_registry_actions(local_name: str) -> tuple[str, ...]:
+    """The namespace spellings of one Registry action that IAM still honours."""
+    return tuple(f"{namespace}:{local_name}" for namespace in _registry_namespaces())
 
 
 def _statement_denies_registry_action(statement: Dict[str, Any], action: str) -> bool:
@@ -1118,15 +1128,45 @@ def _globs_intersect(first: str, second: str) -> bool:
     return False
 
 
+def _registry_scope(resource: str) -> Optional[str]:
+    """Reduce one Resource pattern to a pattern over the registry ARNs it
+    reaches, `arn:<partition>:agent-registry:<region>:<account>:registry/<id>`,
+    or None when it can reach no registry.
+
+    CreateRegistryRecord is authorized on `registry/<id>` and the other publish
+    actions and the approval on `registry/<id>/record/<recordId>`, so the grants
+    of one registry share no string until both are cut back to the registry.
+    The pattern is cut after its registry id, at the id's first `*` because that
+    can also match the `/record/` after it, and one with no literal `:registry/`
+    at its first wildcard. Each cut keeps every registry the pattern reaches and
+    may add others, so it can only over-report. The service segment is read in
+    one namespace, because the preview spelling names the same registries.
+    """
+    marker = ":registry/"
+    index = resource.find(marker)
+    if index < 0:
+        wildcards = [i for i in (resource.find("*"), resource.find("?")) if i >= 0]
+        if not wildcards:
+            return None
+        scope = resource[: min(wildcards)] + "*"
+    else:
+        registry_id = resource[index + len(marker) :].split("/", 1)[0]
+        if "*" in registry_id:
+            registry_id = registry_id[: registry_id.index("*") + 1]
+        scope = resource[: index + len(marker)] + registry_id
+    parts = scope.split(":", 5)
+    if len(parts) == 6 and parts[2] in REGISTRY_IAM_NAMESPACES:
+        parts[2] = REGISTRY_IAM_NAMESPACE
+    return ":".join(parts)
+
+
 def _allow_scopes(
     permissions: Dict[str, Any], action: str
 ) -> List[tuple[List[str], bool]]:
-    """The resource patterns and whether a Condition applies, for each Allow
+    """The registry scopes and whether a Condition applies, for each Allow
     that grants ``action``.
 
     A NotResource Allow, or one naming no Resource, is read as every resource.
-    The service segment of a Registry ARN is read in one namespace, because the
-    preview spelling names the same registries.
     """
     scopes = []
     for policy in _identity_policies(permissions):
@@ -1140,13 +1180,10 @@ def _allow_scopes(
                 if "NotResource" in statement
                 else _as_list(statement.get("Resource")) or ["*"]
             )
-            normalized = []
-            for resource in resources:
-                parts = resource.split(":", 5)
-                if len(parts) == 6 and parts[2] in REGISTRY_IAM_NAMESPACES:
-                    parts[2] = REGISTRY_IAM_NAMESPACE
-                normalized.append(":".join(parts))
-            scopes.append((normalized, bool(statement.get("Condition"))))
+            registries = [
+                scope for scope in map(_registry_scope, resources) if scope is not None
+            ]
+            scopes.append((registries, bool(statement.get("Condition"))))
     return scopes
 
 
@@ -1155,9 +1192,9 @@ def _registry_approval_collisions(
 ) -> List[str]:
     """Return each principal that can publish a record and approve it as well.
 
-    A publish Allow and an approval Allow collide only when their resource
-    scopes overlap, so a curator of one registry who publishes to another is
-    not reported. A wildcard overlaps every resource it can match. Conditions
+    A publish Allow and an approval Allow collide only when they reach a
+    registry in common, so a curator of one registry who publishes to another
+    is not reported. A wildcard overlaps every registry it can match. Conditions
     are not evaluated; a collision resting on a conditioned Allow says so.
     """
     approval_actions = set(_qualified_registry_actions(REGISTRY_APPROVAL_ACTION))
@@ -2102,9 +2139,11 @@ def _classify_or_pattern(
     """Classify a top-level `$or` as each branch merged with the sibling keys.
 
     The rule is `other` when no branch can receive Registry events and
-    `unreadable` when any branch cannot be decided. Otherwise it takes the
-    detail types and narrowing fields of every branch of its kind, so one
-    narrowed branch keeps the whole rule from being credited.
+    `unreadable` when any branch cannot be decided. An event that one branch
+    matches reaches the targets, so the rule is credited with the detail types
+    of its unnarrowed branches of its kind, and the types only a narrowed
+    branch reaches are not credited, as for a narrowed rule. When every branch
+    of its kind is narrowed, it takes their detail types and narrowing fields.
     """
     branches = pattern["$or"]
     siblings = {key: value for key, value in pattern.items() if key != "$or"}
@@ -2131,6 +2170,13 @@ def _classify_or_pattern(
     if kind == "other":
         return {"kind": "other"}
     same_kind = [result for result in results if result["kind"] == kind]
+    unnarrowed = [result for result in same_kind if not result["narrowed_by"]]
+    if unnarrowed:
+        return {
+            "kind": kind,
+            "detail_types": set().union(*(r["detail_types"] for r in unnarrowed)),
+            "narrowed_by": [],
+        }
     return {
         "kind": kind,
         "detail_types": set().union(*(r["detail_types"] for r in same_kind)),
@@ -2178,17 +2224,23 @@ def _classify_pattern(pattern: Dict[str, Any], rule: Dict[str, Any]) -> Dict[str
         and not set(detail_types) & set(REGISTRY_APPROVAL_DETAIL_TYPES)
     ):
         return {"kind": "other"}
+    narrowed_by = sorted(
+        field
+        for field in pattern
+        if field not in ("source", "detail-type")
+        and not _matches_own_scope(pattern, field, rule)
+    )
+    # A pattern naming neither a source nor a detail type matches Registry
+    # events only because absent fields match everything; with a filter on any
+    # other field it was written for some other event.
+    if sources is None and reach is None and narrowed_by:
+        return {"kind": "other"}
     return {
         "kind": "registry" if matches_ga else "preview",
         "detail_types": set(REGISTRY_LIFECYCLE_DETAIL_TYPES)
         if detail_types is None
         else set(detail_types),
-        "narrowed_by": sorted(
-            field
-            for field in pattern
-            if field not in ("source", "detail-type")
-            and not _matches_own_scope(pattern, field, rule)
-        ),
+        "narrowed_by": narrowed_by,
     }
 
 

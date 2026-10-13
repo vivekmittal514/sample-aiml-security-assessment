@@ -326,11 +326,15 @@ back `Passed` names what it could not read.
   policies beside roles, and fails a wildcard `agent-registry` action on a
   resource wildcard that reaches beyond one named registry; `registry/<id>/*`
   stays bounded. `AR-03` fails every registry with auto-approval rules.
-  `AR-09` reports a principal only when its publish and approve grants cover
-  overlapping resources, and stops reading the `bedrock-agentcore` namespace
-  on 30 October 2026. `AR-10` evaluates the EventBridge content matchers on
-  `source` and `detail-type`, reads each top-level `$or` alternative, and
-  credits a rule only with a delivering target. On a Lambda deadline it still
+  `AR-09` reports a principal only when its publish and approve grants reach
+  a registry in common, so `CreateRegistryRecord` on `registry/<id>` beside
+  `UpdateRegistryRecordStatus` on `registry/<id>/record/*` is reported.
+  `AR-01` and `AR-09` stop reading the `bedrock-agentcore` namespace on
+  30 October 2026. `AR-10` evaluates the EventBridge content matchers on
+  `source` and `detail-type`, reads each top-level `$or` alternative and
+  credits the detail types of each one that filters on no other field,
+  ignores a rule that names neither a source nor a detail type but filters on
+  another field, and credits a rule only with a delivering target. On a Lambda deadline it still
   reports the rules it read. `AG-24` takes
   an `AUTHENTICATE_ONLY` gateway's verdict from `AG-25`. `AG-39` and `AC-51`
   credit a WAF filter only to a `Block` rule that no earlier `Allow` on the
