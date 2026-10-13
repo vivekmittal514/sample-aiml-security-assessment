@@ -302,18 +302,18 @@ If the report compares with a run you didn't expect, check that no files were
 copied back into the account's folder. See
 [Re-runs, redeployments, and moved files](ASSESSMENT_HISTORY.md#re-runs-redeployments-and-moved-files).
 
-### 14. AC-34 or AC-35 Rows Say `EnableAgentCoreArtifactContentReads is false`
+### 14. AC-34 or AC-35 Rows Say `EnableAgentCoreArtifactObjectReads is false`
 
 **Symptoms:** `AC-34` code archive and container image rows, or `AC-35` rows
 for a tool schema stored in S3, are informational `N/A` and name
-`EnableAgentCoreArtifactContentReads`.
+`EnableAgentCoreArtifactObjectReads`.
 
 **Cause:** The parameter defaults to `false`. The AgentCore role then holds no
 `s3:GetObject`, `s3:GetObjectVersion`, `ecr:BatchGetImage` or
 `ecr:GetDownloadUrlForLayer`, so the scan does not read object or image layer
 contents. `ecr:DescribeImages` is granted either way.
 
-**Solution:** Set `EnableAgentCoreArtifactContentReads` to `true` on
+**Solution:** Set `EnableAgentCoreArtifactObjectReads` to `true` on
 `deployment/aiml-security-single-account.yaml` or
 `deployment/2-aiml-security-codebuild.yaml`, then start CodeBuild. The S3 grant
 covers `arn:${AWS::Partition}:s3:::*/*`, so the role can read any object whose
@@ -547,9 +547,13 @@ control ID, such as `BR-17`, `AC-04`, or `AG-24`, so the missing evidence is
 visible without increasing the security-failure count.
 
 An AgentCore row that names `LambdaTimeoutApproaching`, or says the Lambda
-timeout was approaching, was left unread near the 900-second limit. The rows
-around it still judge what was read. Rerun the assessment, or assess fewer
-Regions per run with `TargetRegions`.
+timeout was approaching, was left unread near the 900-second limit. That
+includes another Region that the AC-18, AC-26, AC-46, AC-47, AC-48 or AC-51
+cross-Region reads did not reach. The rows around it still judge what was
+read. When the function writes its report about 30 seconds before the hard
+timeout, each leg that had not finished, the one still running included, is an
+`Incomplete` row, in this Region and in the account-wide `Global` checks.
+Rerun the assessment, or assess fewer Regions per run with `TargetRegions`.
 
 Find the matching Lambda invocation in the Step Functions execution and review
 its CloudWatch logs. Correct the missing SAM Lambda permission, unavailable API,

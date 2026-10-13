@@ -26,7 +26,7 @@ Metadata:
           - RequireAgentRegistryManualApproval
           - RequireAgentRegistryCMK
           - AgentCoreTokenVaultId
-          - EnableAgentCoreArtifactContentReads
+          - EnableAgentCoreArtifactObjectReads
           - ApprovedExternalAccountIds
           - ApprovedOrganizationIds
           - EnableSageMakerArtifactObjectReads
@@ -43,8 +43,8 @@ Metadata:
         default: AWS regions to scan
       MaxRegionConcurrency:
         default: Regional scan concurrency
-      EnableAgentCoreArtifactContentReads:
-        default: Read AgentCore artifact contents
+      EnableAgentCoreArtifactObjectReads:
+        default: Read AgentCore artifact objects
 
 Parameters:
   EnableBedrockAssessment:
@@ -120,7 +120,7 @@ Parameters:
     Type: String
     Default: default
     Description: Regional AgentCore Identity token vault ID assessed by AC-14.
-  EnableAgentCoreArtifactContentReads:
+  EnableAgentCoreArtifactObjectReads:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
@@ -144,7 +144,7 @@ Parameters:
 Conditions:
   SageMakerArtifactObjectReadsEnabled:
     !Equals [!Ref EnableSageMakerArtifactObjectReads, "true"]
-  AgentCoreArtifactContentReadsEnabled: !Equals [!Ref EnableAgentCoreArtifactContentReads, "true"]
+  AgentCoreArtifactObjectReadsEnabled: !Equals [!Ref EnableAgentCoreArtifactObjectReads, "true"]
 
 Resources:
   AIMLAssessmentStateMachine:
@@ -2032,9 +2032,9 @@ Resources:
           # AC-34 reads each runtime image's manifest and the URL of its
           # configuration blob and layers, in this account's registry. These
           # read image contents, so they exist only when
-          # EnableAgentCoreArtifactContentReads is true.
+          # EnableAgentCoreArtifactObjectReads is true.
           - !If
-            - AgentCoreArtifactContentReadsEnabled
+            - AgentCoreArtifactObjectReadsEnabled
             - Sid: RuntimeImageConfigRead
               Effect: Allow
               Action:
@@ -2055,9 +2055,9 @@ Resources:
           # cannot be narrower. A code archive pinned by versionId is read
           # with VersionId, which needs s3:GetObjectVersion (GetObject API
           # reference, Permissions). The grant reads object contents, so it
-          # exists only when EnableAgentCoreArtifactContentReads is true.
+          # exists only when EnableAgentCoreArtifactObjectReads is true.
           - !If
-            - AgentCoreArtifactContentReadsEnabled
+            - AgentCoreArtifactObjectReadsEnabled
             - Sid: AgentRuntimeArtifactObjectRead
               Effect: Allow
               Action:
@@ -2176,7 +2176,7 @@ Resources:
           TARGET_REGIONS: !Ref TargetRegions
           AGENTCORE_TOKEN_VAULT_ID: !Ref AgentCoreTokenVaultId
           REQUIRE_AGENTCORE_ONLINE_EVALUATION: !Ref RequireAgentCoreOnlineEvaluation
-          ENABLE_AGENTCORE_ARTIFACT_CONTENT_READS: !Ref EnableAgentCoreArtifactContentReads
+          ENABLE_AGENTCORE_ARTIFACT_OBJECT_READS: !Ref EnableAgentCoreArtifactObjectReads
       Policies:
         - Statement:
             - Sid: AgentCoreReportWrite
@@ -2282,7 +2282,7 @@ Resources:
                 - bedrock-agentcore:ListPaymentManagers # AC-02, AC-48
                 - bedrock-agentcore:ListHarnesses # AC-34, AC-48
                 - bedrock-agentcore:ListBatchEvaluations # AC-41
-                - bedrock-agentcore:ListAgentRuntimeEndpoints # AC-17, AC-30, AC-34, AC-47
+                - bedrock-agentcore:ListAgentRuntimeEndpoints # AC-01, AC-08, AC-17, AC-30, AC-34, AC-45, AC-46, AC-47, AC-48, AC-49, AC-50, AC-52
                 - bedrock-agentcore:ListAgentRuntimeVersions # AC-01
                 - bedrock-agentcore:ListConsentPortals # AC-25
                 - ec2:DescribeNatGateways # AC-49

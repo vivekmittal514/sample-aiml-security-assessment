@@ -57,9 +57,9 @@ _spec.loader.exec_module(agentcore_app)
 
 
 @pytest.fixture(autouse=True)
-def _artifact_content_reads_enabled(monkeypatch):
+def _artifact_object_reads_enabled(monkeypatch):
     # The content-scan tests judge what a read finds; the opt-out has its own.
-    monkeypatch.setenv("ENABLE_AGENTCORE_ARTIFACT_CONTENT_READS", "true")
+    monkeypatch.setenv("ENABLE_AGENTCORE_ARTIFACT_OBJECT_READS", "true")
 
 
 @pytest.mark.parametrize(
@@ -20860,9 +20860,9 @@ class TestAC34RuntimeCode:
     @pytest.mark.parametrize("setting", ["false", None])
     def test_code_is_not_read_unless_the_deployment_opts_in(self, monkeypatch, setting):
         if setting is None:
-            monkeypatch.delenv("ENABLE_AGENTCORE_ARTIFACT_CONTENT_READS")
+            monkeypatch.delenv("ENABLE_AGENTCORE_ARTIFACT_OBJECT_READS")
         else:
-            monkeypatch.setenv("ENABLE_AGENTCORE_ARTIFACT_CONTENT_READS", setting)
+            monkeypatch.setenv("ENABLE_AGENTCORE_ARTIFACT_OBJECT_READS", setting)
         rows = self._run(
             {"rt-b": "b.zip"},
             {"code-bucket/b.zip": self._zip({"cfg.py": f"K = '{self._ACCESS_KEY}'"})},
@@ -20872,7 +20872,7 @@ class TestAC34RuntimeCode:
         ]
         assert (
             f"s3://code-bucket/b.zip could not be read "
-            f"({agentcore_app.ARTIFACT_CONTENT_READS_DISABLED})"
+            f"({agentcore_app.ARTIFACT_OBJECT_READS_DISABLED})"
             in rows[0]["Finding_Details"]
         )
         self.s3.get_object.assert_not_called()
@@ -21388,7 +21388,7 @@ class TestAC34RuntimeImages:
     def test_an_image_is_not_read_unless_the_deployment_opts_in(
         self, mock_ac, mock_ecr, mock_open, monkeypatch
     ):
-        monkeypatch.setenv("ENABLE_AGENTCORE_ARTIFACT_CONTENT_READS", "false")
+        monkeypatch.setenv("ENABLE_AGENTCORE_ARTIFACT_OBJECT_READS", "false")
         self._wire(
             mock_ac,
             mock_ecr,
@@ -21406,7 +21406,7 @@ class TestAC34RuntimeImages:
         ]
         assert (
             f"the configuration or layers of {self._URI}:bad could not be read "
-            f"({agentcore_app.ARTIFACT_CONTENT_READS_DISABLED})"
+            f"({agentcore_app.ARTIFACT_OBJECT_READS_DISABLED})"
             in rows[0]["Finding_Details"]
         )
         mock_ecr.batch_get_image.assert_not_called()
@@ -39373,7 +39373,7 @@ class TestAC51GatewayAntiDdos:
         findings = agentcore_app.check_agentcore_web_acl_anti_ddos()
 
         assert [finding["Status"] for finding in findings] == ["N/A"]
-        assert "No AgentCore Gateways found" in findings[0]["Finding_Details"]
+        assert findings[0]["Finding_Details"] == "No AgentCore Gateways found."
 
     @patch("agentcore_app.agentcore_client")
     def test_an_unlistable_gateway_inventory_is_incomplete(self, mock_ac):
@@ -39635,7 +39635,7 @@ class TestAC51GatewayAntiDdos:
 
     @patch("agentcore_app.wafv2_client")
     @patch("agentcore_app.agentcore_client")
-    def test_every_row_names_the_front_doors_it_does_not_judge(self, mock_ac, mock_waf):
+    def test_a_judged_row_states_the_front_door_scope(self, mock_ac, mock_waf):
         _gateway_stub(
             mock_ac,
             mock_waf,
@@ -39654,20 +39654,29 @@ class TestAC51GatewayAntiDdos:
 
         findings = agentcore_app.check_agentcore_web_acl_anti_ddos()
 
-        assert len(findings) == 3
+        assert sorted(f["Status"] for f in findings) == ["Failed", "N/A", "Passed"]
         for finding in findings:
-            # The row says what was not read and why. It used to say no API
-            # identifies these front doors, which an API Gateway integration
-            # URI refutes; the missing piece is the declined WAF sweep grant.
-            assert finding["Finding_Details"].endswith(
-                "API Gateway APIs and Application Load Balancers that front an AI "
-                "workload are not read: finding them takes the AWS WAF association "
-                "reads wafv2:ListWebACLs and wafv2:ListResourcesForWebACL, whose "
-                "grant was declined for this assessment. CloudFront distributions "
-                "are judged only where an origin is an AgentCore gateway, in the "
-                "AgentCore Front Door rows."
+            # A row that judged a gateway states the scope. It used to say no
+            # API identifies these front doors, which an API Gateway
+            # integration URI refutes, and later that the WAF sweep grant was
+            # declined, which is a deployment fact the row cannot know.
+            details = finding["Finding_Details"]
+            if finding["Status"] == "N/A":
+                assert agentcore_app.AC51_OUT_OF_SCOPE_FRONT_DOORS not in details
+                assert agentcore_app.AC51_SHIELD_NOT_JUDGED not in details
+                continue
+            assert details.endswith(
+                "This check's scope is AgentCore gateways and the CloudFront "
+                "distributions whose origin is a gateway, judged in the AgentCore "
+                "Front Door rows. API Gateway APIs and Application Load Balancers "
+                "that front an AI workload are outside it: finding them takes the "
+                "AWS WAF association reads wafv2:ListWebACLs and "
+                "wafv2:ListResourcesForWebACL, which the assessment role does not "
+                "hold."
             )
-            assert "not identifiable" not in finding["Finding_Details"]
+            assert agentcore_app.AC51_SHIELD_NOT_JUDGED in details
+            assert "declined" not in details
+            assert "not identifiable" not in details
 
     @patch("agentcore_app.wafv2_client")
     @patch("agentcore_app.agentcore_client")
@@ -40332,7 +40341,7 @@ class TestAC51FrontDoorShield:
         mock_cf.get_paginator.assert_called_once_with("list_distributions")
         mock_sh.get_paginator.assert_called_once_with("list_protections")
 
-    def test_every_row_names_the_front_doors_it_does_not_read(
+    def test_a_judged_row_names_the_front_doors_it_does_not_read(
         self, mock_ac, mock_cf, mock_sh
     ):
         _front_door_stub(
@@ -40346,15 +40355,21 @@ class TestAC51FrontDoorShield:
         findings = _shield_rows(agentcore_app.check_agentcore_front_door_shield())
 
         assert [f["Status"] for f in findings] == ["N/A", "Failed"]
+        unread, failed = findings
+        assert (
+            agentcore_app.AC51_OUT_OF_SCOPE_FRONT_DOORS
+            not in (unread["Finding_Details"])
+        )
+        assert failed["Finding_Details"].endswith(
+            agentcore_app.AC51_OUT_OF_SCOPE_FRONT_DOORS
+        )
+        assert (
+            "API Gateway APIs and Application Load Balancers"
+            in failed["Finding_Details"]
+        )
+        assert "which the assessment role does not hold" in failed["Finding_Details"]
         for finding in findings:
-            assert finding["Finding_Details"].endswith(
-                agentcore_app.AC51_OUT_OF_SCOPE_FRONT_DOORS
-            )
-            assert (
-                "API Gateway APIs and Application Load Balancers"
-                in finding["Finding_Details"]
-            )
-            assert "whose grant was declined" in finding["Finding_Details"]
+            assert "declined" not in finding["Finding_Details"]
             assert "ceiling" not in finding["Finding_Details"].lower()
 
     def test_the_handler_registers_the_check_once(self, mock_ac, mock_cf, mock_sh):
@@ -59939,7 +59954,7 @@ class TestAC35PolicyInputGuards:
     def test_an_s3_tool_schema_is_not_read_unless_the_deployment_opts_in(
         self, monkeypatch
     ):
-        monkeypatch.setenv("ENABLE_AGENTCORE_ARTIFACT_CONTENT_READS", "false")
+        monkeypatch.setenv("ENABLE_AGENTCORE_ARTIFACT_OBJECT_READS", "false")
         post = 'action == AgentCore::Action::"ledger___post"'
         rows = self._run(
             [
@@ -59953,7 +59968,7 @@ class TestAC35PolicyInputGuards:
         assert rows["gw-a"]["Severity"] == "Informational"
         assert (
             "its tool schema in S3 was not read "
-            f"({agentcore_app.ARTIFACT_CONTENT_READS_DISABLED})"
+            f"({agentcore_app.ARTIFACT_OBJECT_READS_DISABLED})"
             in rows["gw-a"]["Finding_Details"]
         )
         self.s3.get_object.assert_not_called()
@@ -60940,6 +60955,15 @@ class TestAC51FirewallManagerAndSrt:
             in (rows["gw-acl"]["Finding_Details"])
         )
         assert rows["gw-fms"]["Status"] == "Passed"
+        # Only a row that judged a gateway states the scope.
+        for unread in (rows["gw-err"], rows["gw-acl"]):
+            assert (
+                agentcore_app.AC51_OUT_OF_SCOPE_FRONT_DOORS
+                not in (unread["Finding_Details"])
+            )
+        assert rows["gw-fms"]["Finding_Details"].endswith(
+            agentcore_app.AC51_OUT_OF_SCOPE_FRONT_DOORS
+        )
 
     def _srt(self, gateways=1, state="ACTIVE", status="ENABLED", errors=None):
         errors = errors or {}
@@ -61846,11 +61870,14 @@ class TestAC51FrontDoorWebAcl:
         assert "has no web ACL" in rows[("AG-39", "ENONE")]["Finding_Details"]
         for (check_id, _), row in rows.items():
             if check_id == "AG-39":
-                assert (
-                    "which the assessment role does not hold" in row["Finding_Details"]
+                assert row["Finding_Details"].endswith(
+                    agentcore_app.GATEWAY_WAF_UNREAD_FRONT_DOORS
                 )
             else:
-                assert "whose grant was declined" in row["Finding_Details"]
+                assert row["Finding_Details"].endswith(
+                    agentcore_app.AC51_OUT_OF_SCOPE_FRONT_DOORS
+                )
+            assert "declined" not in row["Finding_Details"]
             assert_finding_schema(row)
 
     def test_the_body_limit_is_read_for_cloudfront_not_the_gateway(
@@ -62894,3 +62921,485 @@ class TestServedRuntimeVersions:
         ]
         assert unread["Status"] == "N/A"
         assert "AccessDeniedException" in unread["Finding_Details"]
+
+
+class TestTheDeadlinePredicate:
+    """#74 second review: the predicate the slow inventories stop on, tested
+    directly so that one returning a constant fails here."""
+
+    @pytest.fixture(autouse=True)
+    def _restore(self):
+        saved = agentcore_app.start_time, agentcore_app.lambda_budget_seconds
+        yield
+        agentcore_app.start_time, agentcore_app.lambda_budget_seconds = saved
+
+    def _passed_at(self, elapsed):
+        agentcore_app.lambda_budget_seconds = 900
+        agentcore_app.start_time = 10_000.0
+        with patch.object(agentcore_app.time, "time", return_value=10_000.0 + elapsed):
+            return agentcore_app._inventory_deadline_passed()
+
+    def test_it_holds_until_the_margin_before_the_budget(self):
+        margin = agentcore_app.INVENTORY_DEADLINE_MARGIN_SECONDS
+        assert margin == 90
+        assert self._passed_at(0) is False
+        assert self._passed_at(900 - margin - 1) is False
+
+    def test_it_trips_at_the_margin_and_stays_tripped(self):
+        margin = agentcore_app.INVENTORY_DEADLINE_MARGIN_SECONDS
+        assert self._passed_at(900 - margin) is True
+        assert self._passed_at(900) is True
+
+    def test_it_follows_the_budget_the_context_set(self):
+        agentcore_app.lambda_budget_seconds = 300
+        agentcore_app.start_time = 10_000.0
+        with patch.object(agentcore_app.time, "time", return_value=10_210.0):
+            assert agentcore_app._inventory_deadline_passed() is True
+        with patch.object(agentcore_app.time, "time", return_value=10_209.0):
+            assert agentcore_app._inventory_deadline_passed() is False
+
+    def test_it_never_trips_outside_an_invocation(self):
+        agentcore_app.start_time = None
+        assert agentcore_app._inventory_deadline_passed() is False
+
+
+def _watchdog_rows_during(check_name, rows=None):
+    """Run the handler, firing the watchdog while `check_name` runs.
+
+    Returns the rows the watchdog wrote, as the CSV a Lambda killed at that
+    moment would hold.
+    """
+    watchdogs = []
+    captured = {}
+
+    class Recording(agentcore_app._ReportWatchdog):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            watchdogs.append(self)
+
+    def hang(*args, **kwargs):
+        (watchdog,) = watchdogs
+        watchdog._write()
+        assert watchdog.written
+        captured["rows"] = [
+            dict(f) for f in agentcore_app.generate_csv_report.call_args.args[0]
+        ]
+        return []
+
+    with patch.object(agentcore_app, "_ReportWatchdog", Recording):
+        _run_agentcore_handler(rows=rows, side_effects={check_name: hang})
+    return captured["rows"]
+
+
+class TestTheWatchdogNamesTheRunningLeg:
+    """#74 second review NEW-1 and NEW-2: a leg still running when the
+    watchdog writes did not complete, so it is backfilled like a skipped one."""
+
+    def test_the_running_ac51_leg_is_incomplete_beside_the_one_that_passed(self):
+        rows = _watchdog_rows_during(
+            "check_agentcore_front_door_shield",
+            rows={
+                "check_agentcore_web_acl_anti_ddos": [
+                    _row(
+                        "AC-51", finding="AgentCore Web ACL Anti-DDoS", status="Passed"
+                    )
+                ]
+            },
+        )
+        ac51 = sorted(
+            (f["Finding"], f["Status"], f["Severity"])
+            for f in rows
+            if f["Check_ID"] == "AC-51" and f["Region"] == "us-east-1"
+        )
+        assert ac51 == [
+            ("AgentCore Front Door Shield and WAF Incomplete", "N/A", "Informational"),
+            (
+                "AgentCore Gateway Firewall Manager Enrollment Incomplete",
+                "N/A",
+                "Informational",
+            ),
+            ("AgentCore Web ACL Anti-DDoS", "Passed", "High"),
+        ]
+        # The global loop had finished, so none of its legs is backfilled.
+        assert not [
+            f
+            for f in rows
+            if f["Region"] == agentcore_app.GLOBAL_REGION_LABEL
+            and f["Finding"].endswith(" Incomplete")
+        ]
+
+    def test_a_leg_that_raised_has_completed(self):
+        def boom(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        watchdogs = []
+
+        class Recording(agentcore_app._ReportWatchdog):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                watchdogs.append(self)
+
+        captured = {}
+
+        def hang(*args, **kwargs):
+            watchdogs[0]._write()
+            captured["rows"] = [
+                dict(f) for f in agentcore_app.generate_csv_report.call_args.args[0]
+            ]
+            return []
+
+        with patch.object(agentcore_app, "_ReportWatchdog", Recording):
+            _run_agentcore_handler(
+                side_effects={
+                    "check_agentcore_web_acl_anti_ddos": boom,
+                    "check_agentcore_front_door_shield": hang,
+                }
+            )
+        names = sorted(
+            f["Finding"] for f in captured["rows"] if f["Check_ID"] == "AC-51"
+        )
+        assert names == [
+            "AgentCore Front Door Shield and WAF Incomplete",
+            "AgentCore Gateway Firewall Manager Enrollment Incomplete",
+            "AgentCore Web ACL Anti-DDoS Check Incomplete",
+        ]
+
+    def test_every_global_leg_is_named_when_it_fires_in_the_global_loop(self):
+        rows = _watchdog_rows_during("check_agentcore_full_access_roles")
+        global_rows = {
+            (f["Check_ID"], f["Finding"]): f
+            for f in rows
+            if f["Region"] == agentcore_app.GLOBAL_REGION_LABEL
+        }
+        entries = _handler_runner_entries("global_checks")
+        first = entries.index((("AC-02",), "IAM Full Access"))
+        expected = {
+            (check_id, f"AgentCore {name} Incomplete")
+            for ids, name in entries[first:] + _handler_runner_entries("account_legs")
+            for check_id in ids
+        }
+        assert set(global_rows) == expected
+        for row in global_rows.values():
+            assert (row["Status"], row["Severity"]) == ("N/A", "Informational")
+        # Every id only the global loop reports has a row.
+        assert {check_id for check_id, _ in global_rows} >= {
+            "AC-02",
+            "AC-03",
+            "AC-09",
+            "AC-21",
+            "AC-23",
+            "AC-28",
+            "AC-29",
+            "AC-32",
+            "AC-33",
+        }
+
+    def test_a_global_leg_that_finished_is_not_named(self):
+        rows = _watchdog_rows_during(
+            "check_stale_agentcore_access",
+            rows={
+                "check_agentcore_full_access_roles": [
+                    _row("AC-02", finding="AgentCore IAM Full Access")
+                ]
+            },
+        )
+        names = {
+            (f["Check_ID"], f["Finding"])
+            for f in rows
+            if f["Region"] == agentcore_app.GLOBAL_REGION_LABEL
+        }
+        assert ("AC-02", "AgentCore IAM Full Access") in names
+        assert ("AC-02", "AgentCore IAM Full Access Incomplete") not in names
+        assert ("AC-03", "AgentCore Stale Access Incomplete") in names
+
+    def test_the_deadline_stop_in_the_global_loop_is_not_named_twice(self):
+        captured = {}
+
+        class FiresLate(agentcore_app._ReportWatchdog):
+            # The timer fires after the global loop's deadline backfill and
+            # just before the handler's own write.
+            def finish(self):
+                if "rows" not in captured:
+                    self._write()
+                    captured["rows"] = [
+                        dict(f)
+                        for f in agentcore_app.generate_csv_report.call_args.args[0]
+                    ]
+                super().finish()
+
+        with patch.object(agentcore_app, "_ReportWatchdog", FiresLate):
+            _run_agentcore_handler(
+                side_effects={
+                    "check_agentcore_full_access_roles": _expire_after_full_access
+                }
+            )
+        stale = [
+            f
+            for f in captured["rows"]
+            if f["Finding"] == "AgentCore Stale Access Incomplete"
+        ]
+        assert len(stale) == 1
+
+
+class TestCrossRegionLoopsStopAtTheDeadline:
+    """#74 second review: each cross-Region loop stops at the deadline, keeps
+    what it read and names each Region it left unread."""
+
+    def test_the_resource_lister_keeps_the_regions_it_read(self):
+        held = MagicMock()
+        held.meta.region_name = "us-east-1"
+        held.list_gateways.return_value = {"items": [{"gatewayId": "gw-e"}]}
+        other = MagicMock()
+        # The probe of us-west-2 and the listing of us-east-1 run; the deadline
+        # then stops the listing of us-west-2.
+        with (
+            patch("agentcore_app.agentcore_client", held),
+            patch.object(agentcore_app.boto3, "client", return_value=other),
+            patch.object(
+                agentcore_app,
+                "_inventory_deadline_passed",
+                side_effect=[False, False, True],
+            ),
+        ):
+            found, unread = agentcore_app._agentcore_resources_in_regions(
+                ["us-west-2"], "list_gateways", ["items", "gateways"]
+            )
+            assert agentcore_app.agentcore_client is held
+        assert found == {"us-east-1": [{"gatewayId": "gw-e"}]}
+        assert unread == ["us-west-2 (LambdaTimeoutApproaching)"]
+        other.list_gateways.assert_not_called()
+
+    def test_the_resource_lister_probes_no_region_past_the_deadline(self):
+        held = MagicMock()
+        held.meta.region_name = "us-east-1"
+        with (
+            patch("agentcore_app.agentcore_client", held),
+            patch.object(agentcore_app.boto3, "client") as factory,
+            _PAST_DEADLINE,
+        ):
+            found, unread = agentcore_app._agentcore_resources_in_regions(
+                ["us-west-2"], "list_gateways", ["items", "gateways"]
+            )
+        factory.assert_not_called()
+        held.list_gateways.assert_not_called()
+        assert found == {}
+        assert sorted(unread) == [
+            "us-east-1 (LambdaTimeoutApproaching)",
+            "us-west-2 (LambdaTimeoutApproaching)",
+        ]
+
+    def test_ac46_names_the_regions_the_deadline_left_unlisted(self):
+        with patch.object(
+            agentcore_app,
+            "_agentcore_resources_in_regions",
+            return_value=({}, ["us-west-2 (LambdaTimeoutApproaching)"]),
+        ):
+            (finding,) = agentcore_app.check_agentcore_runtime_cost_alerting(
+                ["us-west-2"]
+            )
+        assert finding["Check_ID"] == "AC-46"
+        assert finding["Finding"] == agentcore_app.AGENTCORE_COST_ANOMALY_FINDING
+        assert (finding["Status"], finding["Severity"]) == ("N/A", "Informational")
+        assert "us-west-2 (LambdaTimeoutApproaching)" in finding["Finding_Details"]
+        assert_finding_schema(finding)
+
+    def test_ac46_still_gives_no_row_for_a_denied_region(self):
+        with patch.object(
+            agentcore_app,
+            "_agentcore_resources_in_regions",
+            return_value=({}, ["us-west-2 (AccessDeniedException)"]),
+        ):
+            assert (
+                agentcore_app.check_agentcore_runtime_cost_alerting(["us-west-2"]) == []
+            )
+
+    @patch("agentcore_app.ce_client")
+    def test_ac46_keeps_its_verdict_when_a_runtime_was_read(self, mock_ce):
+        mock_ce.get_anomaly_subscriptions.return_value = {"AnomalySubscriptions": []}
+        with patch.object(
+            agentcore_app,
+            "_agentcore_resources_in_regions",
+            return_value=(
+                {
+                    "us-east-1": [
+                        {
+                            "agentRuntimeArn": (
+                                "arn:aws:bedrock-agentcore:us-east-1:"
+                                "123456789012:runtime/rt-1"
+                            )
+                        }
+                    ]
+                },
+                ["us-west-2 (LambdaTimeoutApproaching)"],
+            ),
+        ):
+            findings = agentcore_app.check_agentcore_runtime_cost_alerting(
+                ["us-west-2"]
+            )
+        assert [f["Status"] for f in findings] == ["Failed"]
+
+    def test_ac51_srt_names_the_regions_the_deadline_left_unlisted(self):
+        with (
+            patch.object(
+                agentcore_app,
+                "_agentcore_resources_in_regions",
+                return_value=({}, ["us-west-2 (LambdaTimeoutApproaching)"]),
+            ),
+            patch("agentcore_app.shield_client", MagicMock()),
+        ):
+            (finding,) = agentcore_app.check_agentcore_shield_proactive_engagement(
+                ["us-west-2"]
+            )
+        assert (finding["Status"], finding["Severity"]) == ("N/A", "Informational")
+        assert "us-west-2 (LambdaTimeoutApproaching)" in finding["Finding_Details"]
+
+    def test_ac48_other_region_references_stop_and_name_the_region(self):
+        held = MagicMock()
+        with (
+            patch("agentcore_app.agentcore_client", held),
+            patch.object(agentcore_app.boto3, "client") as factory,
+            _PAST_DEADLINE,
+        ):
+            references, errors = agentcore_app._agentcore_other_region_role_references(
+                ["us-west-2", "eu-west-1"]
+            )
+            assert agentcore_app.agentcore_client is held
+        factory.assert_not_called()
+        assert references == []
+        assert [label for label, _, _ in errors] == [
+            "The AgentCore resources in region us-west-2",
+            "The AgentCore resources in region eu-west-1",
+        ]
+        for _, error, action in errors:
+            assert (
+                agentcore_app._assessment_error_label(error)
+                == "LambdaTimeoutApproaching"
+            )
+            assert action == "bedrock-agentcore:ListAgentRuntimes"
+
+    @patch("agentcore_app.iam_client")
+    @patch("agentcore_app.agentcore_client")
+    def test_ac48_keeps_a_shared_role_and_adds_the_incomplete_row(
+        self, mock_ac, mock_iam
+    ):
+        harness = TestAC48CrossRegionSharing()
+        inventory = harness._wire(mock_ac, mock_iam, runtimes=["SharedRole"])
+        west = harness._remote(gateways=["SharedRole"])
+        # us-west-2 is read; the deadline then stops before eu-west-1.
+        with patch.object(
+            agentcore_app,
+            "_inventory_deadline_passed",
+            side_effect=lambda: agentcore_app.agentcore_client is west,
+        ):
+            findings, factory = harness._run(
+                mock_ac,
+                {"us-west-2": west},
+                ["us-east-1", "us-west-2", "eu-west-1"],
+                inventory=inventory,
+            )
+        shared = harness._named(findings, harness._SHARED)
+        assert [f["Status"] for f in shared] == ["Failed"]
+        (incomplete,) = harness._named(
+            findings, "AgentCore Execution Role Sharing Incomplete"
+        )
+        assert (incomplete["Status"], incomplete["Severity"]) == (
+            "N/A",
+            "Informational",
+        )
+        assert "region eu-west-1" in incomplete["Finding_Details"]
+        assert [call.kwargs["region_name"] for call in factory.call_args_list] == [
+            "us-west-2"
+        ]
+
+    def test_ac48_lists_no_analyzer_past_the_deadline(self):
+        harness = TestAC48AccessAnalyzer()
+        with (
+            _PAST_DEADLINE,
+            patch("agentcore_app._access_analyzer_client") as analyzer_client,
+        ):
+            findings = harness._run({})
+        analyzer_client.assert_not_called()
+        (finding,) = findings
+        assert (finding["Status"], finding["Severity"]) == ("N/A", "Informational")
+        assert "us-east-1 (LambdaTimeoutApproaching)" in finding["Finding_Details"]
+        assert "us-west-2 (LambdaTimeoutApproaching)" in finding["Finding_Details"]
+
+    @patch("agentcore_app.bedrock_client")
+    def test_ac26_reads_this_region_and_names_the_others(self, mock_bedrock):
+        mock_bedrock.meta.region_name = "us-east-1"
+        mock_bedrock.get_model_invocation_logging_configuration.return_value = {
+            "loggingConfig": {"cloudWatchConfig": {"logGroupName": "invocations"}}
+        }
+        with (
+            patch.object(agentcore_app.boto3, "client") as factory,
+            _PAST_DEADLINE,
+        ):
+            arns, unread = agentcore_app._bedrock_invocation_log_group_arns(
+                {"partition": "aws", "account": "123456789012"},
+                ["us-east-1", "us-west-2"],
+            )
+        factory.assert_not_called()
+        assert arns == ["arn:aws:logs:us-east-1:123456789012:log-group:invocations"]
+        assert unread == [("us-west-2", "LambdaTimeoutApproaching")]
+
+    def test_ac26_holds_a_passing_guardrail_at_na(self):
+        test = TestAC26LogTamperEveryRegionsInvocationGroup()
+        with (
+            patch("agentcore_app.bedrock_client") as bedrock,
+            patch("agentcore_app.organizations_client") as mock_orgs,
+            _PAST_DEADLINE,
+        ):
+            bedrock.meta.region_name = "us-east-1"
+            bedrock.get_model_invocation_logging_configuration.return_value = {
+                "loggingConfig": {
+                    "cloudWatchConfig": {"logGroupName": _INVOCATION_GROUP}
+                }
+            }
+            findings, factory = test._findings(
+                mock_orgs,
+                {
+                    "DenyLogTamper": _log_tamper_guard(
+                        resource=_AGENTCORE_LOG_RESOURCES
+                        + _INVOCATION_RESOURCES
+                        + _WEST_RESOURCES
+                    )
+                },
+                test._regional(),
+            )
+        assert factory == []
+        (finding,) = findings
+        assert finding["Finding"] == "Log Tamper Guardrail Incomplete"
+        assert (finding["Status"], finding["Severity"]) == ("N/A", "Informational")
+        assert "us-west-2 (LambdaTimeoutApproaching)" in finding["Finding_Details"]
+
+    @patch("agentcore_app.agentcore_client")
+    @patch("agentcore_app.cloudtrail_client")
+    def test_ac18_lists_no_other_regions_stores_past_the_deadline(
+        self, mock_ct, mock_ac
+    ):
+        other = TestAC18EventDataStores._other_region({})
+        with _PAST_DEADLINE:
+            memory = TestAC18EventDataStores()._run_regions(mock_ct, mock_ac, other)
+        other.list_event_data_stores.assert_not_called()
+        mock_ct.list_event_data_stores.assert_called_once()
+        # Without the deadline this Memory gap fails; an unlisted Region could
+        # hold the store that covers it.
+        assert (memory["Status"], memory["Severity"]) == ("N/A", "Informational")
+        assert (
+            "the CloudTrail Lake event data stores in us-west-2 "
+            f"({agentcore_app.DEADLINE_UNREAD})"
+        ) in memory["Finding_Details"]
+
+    @patch("agentcore_app.agentcore_client")
+    def test_ac47_lists_no_other_regions_gateways_past_the_deadline(self, mock_ac):
+        other = MagicMock()
+        with _PAST_DEADLINE:
+            callers = TestAC47FrontingGatewaysEveryRegion()._callers(
+                mock_ac, {"rt-a": [_principal_deny("gww")]}, other
+            )
+        other.list_gateways.assert_not_called()
+        assert callers["rt-a"]["Status"] == "N/A"
+        assert (
+            "bedrock-agentcore:ListGateways in us-west-2 (LambdaTimeoutApproaching)"
+            in callers["rt-a"]["Finding_Details"]
+        )

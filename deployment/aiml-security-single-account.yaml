@@ -32,7 +32,7 @@ Metadata:
           - RequireAgentRegistryManualApproval
           - RequireAgentRegistryCMK
           - AgentCoreTokenVaultId
-          - EnableAgentCoreArtifactContentReads
+          - EnableAgentCoreArtifactObjectReads
           - ApprovedExternalAccountIds
           - ApprovedOrganizationIds
           - EnableSageMakerArtifactObjectReads
@@ -75,8 +75,8 @@ Metadata:
         default: Require Agent Registry customer-managed keys
       AgentCoreTokenVaultId:
         default: AgentCore token vault ID
-      EnableAgentCoreArtifactContentReads:
-        default: Read AgentCore artifact contents
+      EnableAgentCoreArtifactObjectReads:
+        default: Read AgentCore artifact objects
       ApprovedExternalAccountIds:
         default: Approved Model Registry account IDs
       ApprovedOrganizationIds:
@@ -231,7 +231,7 @@ Parameters:
     Default: default
     Description: Regional AgentCore Identity token vault ID assessed by AC-14.
 
-  EnableAgentCoreArtifactContentReads:
+  EnableAgentCoreArtifactObjectReads:
     Type: String
     Default: "false"
     AllowedValues: ["true", "false"]
@@ -589,8 +589,8 @@ Resources:
           - Name: AGENTCORE_TOKEN_VAULT_ID
             Value: !Ref AgentCoreTokenVaultId
             Type: PLAINTEXT
-          - Name: ENABLE_AGENTCORE_ARTIFACT_CONTENT_READS
-            Value: !Ref EnableAgentCoreArtifactContentReads
+          - Name: ENABLE_AGENTCORE_ARTIFACT_OBJECT_READS
+            Value: !Ref EnableAgentCoreArtifactObjectReads
             Type: PLAINTEXT
           - Name: APPROVED_EXTERNAL_ACCOUNT_IDS
             Value: !Ref ApprovedExternalAccountIds

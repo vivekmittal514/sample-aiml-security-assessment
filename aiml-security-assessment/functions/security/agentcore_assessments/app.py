@@ -1762,6 +1762,7 @@ DEADLINE_UNREAD = "the Lambda timeout was approaching, so it was not read"
 DEADLINE_REGION_UNREAD = (
     "bedrock-agentcore:ListAgentRuntimes in {region} (LambdaTimeoutApproaching)"
 )
+DEADLINE_ERROR_LABEL = "LambdaTimeoutApproaching"
 
 
 def _inventory_deadline_passed() -> bool:
@@ -2168,6 +2169,8 @@ class _ReportWatchdog:
 
     The handler calls finish() before its own write. A write the watchdog has
     begun completes first, so the handler's fuller report replaces it.
+    pending_global_legs holds the global runner entries not yet returned or
+    raised, the one running included, which the watchdog names as skipped.
     """
 
     def __init__(
@@ -2177,11 +2180,15 @@ class _ReportWatchdog:
         region: str,
         findings: List[Dict[str, Any]],
         completed_legs: Set[Tuple[str, str]],
+        pending_global_legs: Optional[List[Tuple[List[str], str, Any]]] = None,
     ) -> None:
         self._execution_id = execution_id
         self._region = region
         self._findings = findings
         self._completed_legs = completed_legs
+        self._pending_global_legs = (
+            pending_global_legs if pending_global_legs is not None else []
+        )
         self._lock = threading.Lock()
         self._done = False
         self.written = False
@@ -2205,6 +2212,9 @@ class _ReportWatchdog:
                     "collected so far"
                 )
                 snapshot = [dict(finding) for finding in list(self._findings)]
+                snapshot.extend(
+                    _skipped_global_leg_findings(list(self._pending_global_legs))
+                )
                 prepare_agentcore_timeout_report_findings(
                     snapshot, self._region, set(self._completed_legs)
                 )
@@ -14231,6 +14241,12 @@ def _cloudtrail_data_event_resource_types(
                 )
     seen_stores: Set[str] = set()
     for store_region, store_client in store_clients:
+        if store_region != region and _inventory_deadline_passed():
+            unreadable.append(
+                f"the CloudTrail Lake event data stores in {store_region} "
+                f"({DEADLINE_UNREAD})"
+            )
+            continue
         try:
             stores = _paginate_aws_list(
                 store_client,
@@ -23569,6 +23585,9 @@ def _bedrock_invocation_log_group_arns(
     for region in target_regions or []:
         if not region or region == own:
             continue
+        if _inventory_deadline_passed():
+            unread.append((region, DEADLINE_ERROR_LABEL))
+            continue
         try:
             client = boto3.client("bedrock", config=boto3_config, region_name=region)
             config = client.get_model_invocation_logging_configuration()
@@ -26229,16 +26248,16 @@ ECR_IMAGE_LAYER_TIMEOUT_SECONDS = 30
 AC34_PARALLEL_READS = 3
 # Why AC-34 and AC-35 read no code archive, tool schema or image layer when the
 # deployment did not opt in: the function then holds no grant to read them.
-ARTIFACT_CONTENT_READS_DISABLED = (
-    "EnableAgentCoreArtifactContentReads is false, so the assessment holds no "
+ARTIFACT_OBJECT_READS_DISABLED = (
+    "EnableAgentCoreArtifactObjectReads is false, so the assessment holds no "
     "grant to read artifact contents; set it to true to read them"
 )
 
 
-def _artifact_content_reads_enabled() -> bool:
+def _artifact_object_reads_enabled() -> bool:
     """Whether the deployment opted in to reading code, schemas and images."""
     return (
-        os.environ.get("ENABLE_AGENTCORE_ARTIFACT_CONTENT_READS", "").lower() == "true"
+        os.environ.get("ENABLE_AGENTCORE_ARTIFACT_OBJECT_READS", "").lower() == "true"
     )
 
 
@@ -26813,8 +26832,8 @@ def _read_s3_object_bounded(
     BotoCoreError or ValueError, so a caller never treats an unread object as
     clean.
     """
-    if not _artifact_content_reads_enabled():
-        raise ValueError(ARTIFACT_CONTENT_READS_DISABLED)
+    if not _artifact_object_reads_enabled():
+        raise ValueError(ARTIFACT_OBJECT_READS_DISABLED)
     request: Dict[str, str] = {"Bucket": bucket, "Key": key}
     if version_id:
         request["VersionId"] = version_id
@@ -27179,8 +27198,8 @@ def _image_config_credentials(
     image digest already read, so an image that several tags, versions or
     runtimes name is downloaded once.
     """
-    if not _artifact_content_reads_enabled():
-        raise ValueError(ARTIFACT_CONTENT_READS_DISABLED)
+    if not _artifact_object_reads_enabled():
+        raise ValueError(ARTIFACT_OBJECT_READS_DISABLED)
     client = _ecr_client_for(region_name)
     image_id = (
         {"imageDigest": reference[1:]}
@@ -37288,7 +37307,8 @@ def _agentcore_resources_in_regions(
 
     Returns the resources by Region and each Region not read, with why. A
     Region where AgentCore has no endpoint, or that the account has not opted
-    into, holds no resource and is skipped, as the handler skips it.
+    into, holds no resource and is skipped, as the handler skips it. A Region
+    left unread at the Lambda deadline is named with DEADLINE_ERROR_LABEL.
     """
     global agentcore_client
     found: Dict[str, List[Dict[str, Any]]] = {}
@@ -37298,6 +37318,9 @@ def _agentcore_resources_in_regions(
     try:
         for region in other_regions or []:
             if any(region == known for known, _ in clients):
+                continue
+            if _inventory_deadline_passed():
+                unread.append(f"{region} ({DEADLINE_ERROR_LABEL})")
                 continue
             try:
                 client = boto3.client(
@@ -37319,6 +37342,9 @@ def _agentcore_resources_in_regions(
                 continue
             clients.append((region, client))
         for region, client in clients:
+            if _inventory_deadline_passed():
+                unread.append(f"{region} ({DEADLINE_ERROR_LABEL})")
+                continue
             agentcore_client = client
             try:
                 items = _agentcore_list_all(operation, keys)
@@ -37348,14 +37374,34 @@ def check_agentcore_runtime_cost_alerting(
     Cost alerting is account-wide, so the handler runs this once, on the
     primary Region, over the runtimes here and in `other_regions`. The session
     limits check reports an unavailable client or an unlistable region, so a
-    Region not read adds no row of its own here.
+    Region not read adds no row of its own here, unless the Lambda deadline
+    left it unread: no other row judges this leg there.
     """
-    by_region, _ = _agentcore_resources_in_regions(
+    by_region, unread = _agentcore_resources_in_regions(
         other_regions, "list_agent_runtimes", ["agentRuntimes"]
     )
     runtimes = [runtime for items in by_region.values() for runtime in items]
     if not runtimes:
-        return []
+        deadline_unread = [entry for entry in unread if DEADLINE_ERROR_LABEL in entry]
+        if not deadline_unread:
+            return []
+        return [
+            create_finding(
+                check_id="AC-46",
+                finding_name=AGENTCORE_COST_ANOMALY_FINDING,
+                finding_details=(
+                    "Whether this account runs an AgentCore runtime was not read "
+                    f"in {'; '.join(deadline_unread)}, so whether the account "
+                    "alerts on anomalous spend was not judged."
+                ),
+                resolution=(
+                    "Re-run the assessment to complete the skipped AgentCore checks."
+                ),
+                reference=COST_ANOMALY_DETECTION_REFERENCE_URL,
+                severity=SeverityEnum.INFORMATIONAL,
+                status=StatusEnum.NA,
+            )
+        ]
     accounts = {
         _arn_account(runtime.get("agentRuntimeArn")) for runtime in runtimes
     } - {""}
@@ -37444,6 +37490,12 @@ def _runtime_fronting_gateways(
     held = agentcore_client
     try:
         for region in other_regions or []:
+            if _inventory_deadline_passed():
+                unread.append(
+                    f"bedrock-agentcore:ListGateways in {region} "
+                    f"({DEADLINE_ERROR_LABEL})"
+                )
+                continue
             try:
                 agentcore_client = boto3.client(
                     "bedrock-agentcore-control", config=boto3_config, region_name=region
@@ -38466,6 +38518,15 @@ def _agentcore_other_region_role_references(
     try:
         for region in regions:
             label = f"The AgentCore resources in region {region}"
+            if _inventory_deadline_passed():
+                errors.append(
+                    (
+                        label,
+                        ValueError(DEADLINE_UNREAD),
+                        "bedrock-agentcore:ListAgentRuntimes",
+                    )
+                )
+                continue
             try:
                 client = boto3.client(
                     "bedrock-agentcore-control", config=boto3_config, region_name=region
@@ -38599,6 +38660,9 @@ def check_agentcore_execution_role_access_analyzer(
     excluded: List[str] = []
     unread: List[str] = []
     for analyzer_region in regions:
+        if _inventory_deadline_passed():
+            unread.append(f"{analyzer_region} ({DEADLINE_ERROR_LABEL})")
+            continue
         try:
             analyzers = _paginate_aws_list(
                 _access_analyzer_client(analyzer_region),
@@ -39087,7 +39151,7 @@ def check_agentcore_execution_role_trust_and_sharing(
             )
         )
 
-    if (sharing_roles or remote_errors) and not shared and sharing_errors:
+    if (sharing_roles or remote_errors) and sharing_errors:
         findings.append(
             create_finding(
                 check_id="AC-48",
@@ -42365,13 +42429,25 @@ def _web_acl_with_firewall_manager_rules(web_acl: Dict[str, Any]) -> Dict[str, A
     return merged
 
 
+# Each AC-51 row that judged a gateway or a distribution fronting one says
+# what the check's scope leaves out.
 AC51_OUT_OF_SCOPE_FRONT_DOORS = (
-    "API Gateway APIs and Application Load Balancers that front an AI workload are "
-    "not read: finding them takes the AWS WAF association reads wafv2:ListWebACLs "
-    "and wafv2:ListResourcesForWebACL, whose grant was declined for this "
-    "assessment. CloudFront distributions are judged only where an origin is an "
-    "AgentCore gateway, in the AgentCore Front Door rows."
+    "This check's scope is AgentCore gateways and the CloudFront distributions "
+    "whose origin is a gateway, judged in the AgentCore Front Door rows. API "
+    "Gateway APIs and Application Load Balancers that front an AI workload are "
+    "outside it: finding them takes the AWS WAF association reads "
+    "wafv2:ListWebACLs and wafv2:ListResourcesForWebACL, which the assessment "
+    "role does not hold."
 )
+
+
+def _ac51_scope_details(details: str, status: StatusEnum, *notes: str) -> str:
+    """Append the scope notes to an AC-51 row that judged a front door."""
+    if status not in (StatusEnum.PASSED, StatusEnum.FAILED):
+        return details
+    return " ".join((details, *notes))
+
+
 AC51_SHIELD_NOT_JUDGED = (
     "Shield Advanced enrollment of the gateway itself is not judged, because "
     "shield:CreateProtection accepts no AgentCore gateway ARN."
@@ -42559,8 +42635,8 @@ def check_agentcore_web_acl_anti_ddos() -> List[Dict[str, Any]]:
         return create_finding(
             check_id="AC-51",
             finding_name=finding_name,
-            finding_details=(
-                f"{details} {AC51_SHIELD_NOT_JUDGED} {AC51_OUT_OF_SCOPE_FRONT_DOORS}"
+            finding_details=_ac51_scope_details(
+                details, status, AC51_SHIELD_NOT_JUDGED, AC51_OUT_OF_SCOPE_FRONT_DOORS
             ),
             resolution=resolution,
             reference=WAF_ANTI_DDOS_REFERENCE_URL,
@@ -42702,7 +42778,9 @@ def _front_door_web_acl_findings(
         return create_finding(
             check_id="AC-51",
             finding_name=AGENTCORE_FRONT_DOOR_ANTI_DDOS_FINDING,
-            finding_details=f"{details} {AC51_OUT_OF_SCOPE_FRONT_DOORS}",
+            finding_details=_ac51_scope_details(
+                details, status, AC51_OUT_OF_SCOPE_FRONT_DOORS
+            ),
             resolution=resolution,
             reference=WAF_ANTI_DDOS_REFERENCE_URL,
             severity=severity,
@@ -42813,7 +42891,9 @@ def check_agentcore_front_door_shield() -> List[Dict[str, Any]]:
         return create_finding(
             check_id="AC-51",
             finding_name=AGENTCORE_FRONT_DOOR_SHIELD_FINDING,
-            finding_details=f"{details} {AC51_OUT_OF_SCOPE_FRONT_DOORS}",
+            finding_details=_ac51_scope_details(
+                details, status, AC51_OUT_OF_SCOPE_FRONT_DOORS
+            ),
             resolution=resolution,
             reference=SHIELD_PROTECTED_RESOURCES_REFERENCE_URL,
             severity=severity,
@@ -43014,7 +43094,9 @@ def check_agentcore_gateway_firewall_manager() -> List[Dict[str, Any]]:
         return create_finding(
             check_id="AC-51",
             finding_name=AGENTCORE_FIREWALL_MANAGER_FINDING,
-            finding_details=f"{details} {AC51_OUT_OF_SCOPE_FRONT_DOORS}",
+            finding_details=_ac51_scope_details(
+                details, status, AC51_OUT_OF_SCOPE_FRONT_DOORS
+            ),
             resolution=resolution,
             reference=FIREWALL_MANAGER_REFERENCE_URL,
             severity=severity,
@@ -45014,8 +45096,14 @@ def lambda_handler(event, context):
         # Collect all findings
         all_findings = []
         completed_legs: Set[Tuple[str, str]] = set()
+        pending_global_legs: List[Tuple[List[str], str, Any]] = []
         watchdog = _ReportWatchdog(
-            context, execution_id, region, all_findings, completed_legs
+            context,
+            execution_id,
+            region,
+            all_findings,
+            completed_legs,
+            pending_global_legs,
         )
 
         # Retrieve permission cache (shared/global IAM data)
@@ -45308,6 +45396,7 @@ def lambda_handler(event, context):
                     ),
                     *account_legs,
                 ]
+            pending_global_legs.extend(global_checks)
             for index, (check_ids, check_name, check_func) in enumerate(global_checks):
                 if not check_timeout():
                     logger.error(
@@ -45317,6 +45406,7 @@ def lambda_handler(event, context):
                     all_findings.extend(
                         _skipped_global_leg_findings(global_checks[index:])
                     )
+                    pending_global_legs.clear()
                     break
                 try:
                     logger.info(f"Running global check: {check_name}")
@@ -45334,6 +45424,8 @@ def lambda_handler(event, context):
                             GLOBAL_REGION_LABEL,
                         )
                     )
+                finally:
+                    pending_global_legs.pop(0)
 
         if runtime_probe_auth_error_code is not None:
             all_findings.append(
@@ -45753,9 +45845,6 @@ def lambda_handler(event, context):
                 deadline_reached = True
                 break
 
-            completed_legs.update(
-                (check_id, f"AgentCore {check_name}") for check_id in check_ids
-            )
             try:
                 logger.info(f"Running check: {check_name}")
                 check_start = time.time()
@@ -45777,6 +45866,12 @@ def lambda_handler(event, context):
                         e,
                         region,
                     )
+                )
+            finally:
+                # Only now has the leg completed: the watchdog backfills one
+                # that is still running when it fires.
+                completed_legs.update(
+                    (check_id, f"AgentCore {check_name}") for check_id in check_ids
                 )
 
         if deadline_reached:
